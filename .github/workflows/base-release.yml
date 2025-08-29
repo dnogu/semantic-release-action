@@ -1,0 +1,161 @@
+name: Major Version Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      enable_major_release:
+        description: 'Enable major version release creation'
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  create-major-release:
+    name: Create Major Version Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # Only run for non-prerelease versions and if enabled
+    if: github.event.release.prerelease == false && (github.event_name == 'release' || github.event.inputs.enable_major_release == 'true')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract major version
+        id: extract-version
+        run: |
+          release_tag="${{ github.event.release.tag_name }}"
+          echo "Release tag: $release_tag"
+          
+          # Remove 'v' prefix and extract major version
+          version_without_v=${release_tag#v}
+          IFS='.' read -ra VERSION_PARTS <<< "$version_without_v"
+          major_version="v${VERSION_PARTS[0]}"
+          
+          echo "major_version=$major_version" >> $GITHUB_OUTPUT
+          echo "full_version=$release_tag" >> $GITHUB_OUTPUT
+          echo "Major version: $major_version"
+
+      - name: Update major version tag
+        run: |
+          major_version="${{ steps.extract-version.outputs.major_version }}"
+          full_version="${{ steps.extract-version.outputs.full_version }}"
+          
+          # Configure git
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          # Delete existing major version tag if it exists
+          git tag -d "$major_version" 2>/dev/null || true
+          git push origin ":refs/tags/$major_version" 2>/dev/null || true
+          
+          # Create new major version tag pointing to the full version
+          git tag -a "$major_version" -m "Major version tag pointing to $full_version"
+          git push origin "$major_version"
+          
+          echo "✅ Updated major version tag: $major_version → $full_version"
+
+      - name: Check if major release exists
+        id: check-release
+        run: |
+          major_version="${{ steps.extract-version.outputs.major_version }}"
+          
+          # Check if a release already exists for this major version tag
+          if gh release view "$major_version" >/dev/null 2>&1; then
+            echo "release_exists=true" >> $GITHUB_OUTPUT
+            echo "Major release $major_version already exists - will update it"
+          else
+            echo "release_exists=false" >> $GITHUB_OUTPUT
+            echo "Major release $major_version does not exist - will create it"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete existing major release
+        if: steps.check-release.outputs.release_exists == 'true'
+        run: |
+          major_version="${{ steps.extract-version.outputs.major_version }}"
+          gh release delete "$major_version" --yes
+          echo "Deleted existing major release: $major_version"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create major version release
+        run: |
+          major_version="${{ steps.extract-version.outputs.major_version }}"
+          full_version="${{ steps.extract-version.outputs.full_version }}"
+          release_name="${{ github.event.release.name }}"
+          
+          # Create the major version release with multiline notes
+          cat > release_notes.md << 'EOF'
+          # Major Release ${{ steps.extract-version.outputs.major_version }}
+
+          This major version tag points to the latest stable release: **${{ steps.extract-version.outputs.full_version }}**
+
+          ## Latest Release: ${{ github.event.release.name }}
+
+          ${{ github.event.release.body }}
+
+          ---
+          *This is an automatically generated major version release that tracks the latest stable release in the ${{ steps.extract-version.outputs.major_version }}.x series.*
+          EOF
+          
+          # Replace variables in the file
+          sed -i "s/\${{ steps.extract-version.outputs.major_version }}/$major_version/g" release_notes.md
+          sed -i "s/\${{ steps.extract-version.outputs.full_version }}/$full_version/g" release_notes.md
+          sed -i "s/\${{ github.event.release.name }}/$release_name/g" release_notes.md
+          
+          # Create the release
+          gh release create "$major_version" \
+            --title "Major Release $major_version" \
+            --notes-file release_notes.md
+          
+          echo "✅ Created major version release: $major_version"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Copy release assets
+        run: |
+          major_version="${{ steps.extract-version.outputs.major_version }}"
+          full_version="${{ steps.extract-version.outputs.full_version }}"
+          
+          # Get list of assets from the original release
+          assets=$(gh release view "$full_version" --json assets --jq '.assets[].name')
+          
+          if [ -n "$assets" ]; then
+            echo "Copying assets from $full_version to $major_version..."
+            
+            # Download assets from original release
+            gh release download "$full_version"
+            
+            # Upload assets to major version release
+            for asset in $assets; do
+              if [ -f "$asset" ]; then
+                gh release upload "$major_version" "$asset"
+                echo "✅ Copied asset: $asset"
+              fi
+            done
+            
+            # Clean up downloaded files
+            rm -f $assets
+          else
+            echo "No assets to copy from $full_version"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          major_version="${{ steps.extract-version.outputs.major_version }}"
+          full_version="${{ steps.extract-version.outputs.full_version }}"
+          
+          echo "🎉 Successfully created/updated major version release!"
+          echo "📦 Major version: $major_version"
+          echo "🎯 Points to: $full_version"
+          echo "🔗 Release URL: ${{ github.event.release.html_url }}"

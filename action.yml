@@ -69,11 +69,15 @@ inputs:
   
   # Release configuration
   create-major-release:
-    description: 'Whether to create major version releases (v1, v2, etc.)'
+    description: 'Whether to create major version releases (v1.2.3, v2.1.0, etc.)'
+    required: false
+    default: 'true'
+  base_release:
+    description: 'Whether to create/update base version tags (v1, v2, etc.) that point to latest major version'
     required: false
     default: 'true'
   copy-assets:
-    description: 'Whether to copy assets to major version releases'
+    description: 'Whether to copy assets to base version releases'
     required: false
     default: 'true'
   auto-generate-notes:

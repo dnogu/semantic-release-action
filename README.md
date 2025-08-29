@@ -35,14 +35,36 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-### 2. Add Labels to Your PR
+### 2. With Base Release (Recommended)
+
+For actions that need major version tags (v1, v2, etc.):
+
+```yaml
+name: Release
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dnogu/semantic-release-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          base_release: true
+```
+
+### 3. Add Labels to Your PR
 
 - `major` - Breaking changes (1.0.0 → 2.0.0)
 - `minor` - New features (1.0.0 → 1.1.0)
 - `patch` - Bug fixes (1.0.0 → 1.0.1)
 - `prerelease` - Beta versions (1.0.0 → 1.1.0-beta.1)
 
-### 3. Merge and Release! 🎉
+### 4. Merge and Release! 🎉
 
 When you merge a PR with labels, the action automatically:
 - Calculates the new version
@@ -50,7 +72,7 @@ When you merge a PR with labels, the action automatically:
 - Runs tests and builds your project
 - Creates a git tag and GitHub release
 - Generates release notes from commits
-- Creates major version releases (v1, v2, etc.)
+- **With `base_release: true`**: Creates/updates major version tags (v1, v2, etc.)
 
 ## 📚 Full Configuration
 
@@ -81,7 +103,8 @@ When you merge a PR with labels, the action automatically:
     build-command: 'npm run build'
     
     # Release options
-    create-major-release: true
+    create-major-release: true  # Create full version releases (v1.2.3)
+    base_release: true          # Create/update major version tags (v1, v2, etc.)
     copy-assets: true
     auto-generate-notes: true
     
