@@ -1,0 +1,134 @@
+name: 'Semantic Release Action'
+description: 'Automated semantic versioning and release creation based on PR labels'
+author: 'dnogu'
+
+branding:
+  icon: 'tag'
+  color: 'blue'
+
+inputs:
+  github-token:
+    description: 'GitHub token for creating releases and tags'
+    required: true
+  
+  # Version labels
+  major-label:
+    description: 'Label name for major version bumps'
+    required: false
+    default: 'major'
+  minor-label:
+    description: 'Label name for minor version bumps'
+    required: false
+    default: 'minor'
+  patch-label:
+    description: 'Label name for patch version bumps'
+    required: false
+    default: 'patch'
+  prerelease-label:
+    description: 'Label name for prerelease versions'
+    required: false
+    default: 'prerelease'
+  
+  # Prerelease configuration
+  prerelease-suffix:
+    description: 'Suffix to use for prerelease versions (e.g., beta, alpha, rc)'
+    required: false
+    default: 'beta'
+  prerelease-number:
+    description: 'Starting number for prerelease versions'
+    required: false
+    default: '1'
+  
+  # Build configuration
+  node-version:
+    description: 'Node.js version to use for building'
+    required: false
+    default: '20'
+  package-manager:
+    description: 'Package manager to use (npm, yarn, pnpm)'
+    required: false
+    default: 'npm'
+  working-directory:
+    description: 'Working directory for the action'
+    required: false
+    default: '.'
+  
+  # Commands
+  install-command:
+    description: 'Command to install dependencies'
+    required: false
+    default: ''  # Will be auto-detected based on package manager
+  test-command:
+    description: 'Command to run tests'
+    required: false
+    default: ''  # Will try common test commands
+  build-command:
+    description: 'Command to build the project'
+    required: false
+    default: ''  # Will try common build commands
+  
+  # Release configuration
+  create-major-release:
+    description: 'Whether to create major version releases (v1, v2, etc.)'
+    required: false
+    default: 'true'
+  copy-assets:
+    description: 'Whether to copy assets to major version releases'
+    required: false
+    default: 'true'
+  auto-generate-notes:
+    description: 'Whether to auto-generate release notes from commits'
+    required: false
+    default: 'true'
+  
+  # Package.json handling
+  update-package-json:
+    description: 'Whether to update package.json version'
+    required: false
+    default: 'true'
+  package-json-path:
+    description: 'Path to package.json file'
+    required: false
+    default: 'package.json'
+  
+  # Git configuration
+  git-user-name:
+    description: 'Git user name for commits'
+    required: false
+    default: 'github-actions[bot]'
+  git-user-email:
+    description: 'Git user email for commits'
+    required: false
+    default: 'github-actions[bot]@users.noreply.github.com'
+  
+  # Trigger mode
+  trigger-mode:
+    description: 'How the action was triggered (pr-merge, manual, workflow-call)'
+    required: false
+    default: 'auto-detect'
+
+outputs:
+  released:
+    description: 'Whether a release was created (true/false)'
+  version:
+    description: 'The new version number (e.g., v1.2.3)'
+  previous-version:
+    description: 'The previous version number'
+  release-type:
+    description: 'Type of release (major/minor/patch/none)'
+  is-prerelease:
+    description: 'Whether this is a prerelease (true/false)'
+  release-url:
+    description: 'URL of the created release'
+  release-id:
+    description: 'ID of the created release'
+  major-version:
+    description: 'Major version tag (e.g., v1)'
+  major-release-url:
+    description: 'URL of the major version release'
+  tag-name:
+    description: 'Git tag name that was created'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
