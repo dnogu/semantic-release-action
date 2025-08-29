@@ -1,4 +1,4 @@
-name: 'Semantic Release Action'
+name: 'Semantic Create Release'
 description: 'Automated semantic versioning and release creation based on PR labels'
 author: 'dnogu'
 
