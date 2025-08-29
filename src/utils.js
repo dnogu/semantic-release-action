@@ -61,14 +61,25 @@ function parseVersion(version) {
   // Remove 'v' prefix if present
   const cleanVersion = version.startsWith('v') ? version.slice(1) : version;
   
+  // Check for prerelease (contains hyphen)
+  const prereleaseIndex = cleanVersion.indexOf('-');
+  let versionPart, prereleasePart = null;
+  
+  if (prereleaseIndex !== -1) {
+    versionPart = cleanVersion.substring(0, prereleaseIndex);
+    prereleasePart = cleanVersion.substring(prereleaseIndex + 1);
+  } else {
+    versionPart = cleanVersion;
+  }
+  
   // Split version parts
-  const parts = cleanVersion.split('.');
+  const parts = versionPart.split('.');
   
   return {
     major: parseInt(parts[0]) || 0,
     minor: parseInt(parts[1]) || 0,
     patch: parseInt(parts[2]) || 0,
-    prerelease: parts[3] || null
+    prerelease: prereleasePart
   };
 }
 
