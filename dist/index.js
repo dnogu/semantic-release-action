@@ -30073,9 +30073,23 @@ async function run() {
 
 function getLatestVersion() {
   try {
+    // First try to get tags from remote to ensure we have the latest
+    execSync('git fetch --tags', { stdio: 'pipe' });
+    
+    // Get the latest tag
     const latestTag = execSync('git describe --tags --abbrev=0', { encoding: 'utf8' }).trim();
     return latestTag;
   } catch (error) {
+    try {
+      // If git describe fails, try git tag with sorting
+      const tags = execSync('git tag --sort=-version:refname', { encoding: 'utf8' }).trim();
+      if (tags) {
+        const latestTag = tags.split('\n')[0];
+        return latestTag;
+      }
+    } catch (e) {
+      // If both fail, no tags exist
+    }
     core.info('No previous tags found, starting from v0.0.0');
     return 'v0.0.0';
   }
