@@ -1,0 +1,188 @@
+name: Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+      prerelease:
+        description: 'Is this a prerelease?'
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  release:
+    name: Create Manual Release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get latest tag
+        id: get-latest-tag
+        run: |
+          # Get the latest tag, fallback to v0.0.0 if no tags exist
+          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "latest_tag=$latest_tag" >> $GITHUB_OUTPUT
+          echo "Latest tag: $latest_tag"
+
+      - name: Calculate new version
+        id: calc-version
+        run: |
+          latest_tag="${{ steps.get-latest-tag.outputs.latest_tag }}"
+          release_type="${{ github.event.inputs.release_type }}"
+          is_prerelease="${{ github.event.inputs.prerelease }}"
+          
+          # Remove 'v' prefix and split version
+          version_number=${latest_tag#v}
+          IFS='.' read -ra VERSION_PARTS <<< "$version_number"
+          
+          major=${VERSION_PARTS[0]:-0}
+          minor=${VERSION_PARTS[1]:-0}
+          patch=${VERSION_PARTS[2]:-0}
+          
+          echo "Current version: v$major.$minor.$patch"
+          
+          # Calculate new version based on release type
+          case $release_type in
+            major)
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+            minor)
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            patch)
+              patch=$((patch + 1))
+              ;;
+          esac
+          
+          # Add prerelease suffix if this is a prerelease
+          if [ "$is_prerelease" = "true" ]; then
+            new_version="v$major.$minor.$patch-beta.1"
+          else
+            new_version="v$major.$minor.$patch"
+          fi
+          
+          echo "new_version=$new_version" >> $GITHUB_OUTPUT
+          echo "New version: $new_version"
+
+      - name: Update package.json version
+        run: |
+          new_version="${{ steps.calc-version.outputs.new_version }}"
+          version_without_v=${new_version#v}
+          
+          # Update package.json version
+          sed -i "s/\"version\": \".*\"/\"version\": \"$version_without_v\"/" package.json
+          
+          echo "Updated package.json to version $version_without_v"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build action
+        run: |
+          npm install -g @vercel/ncc
+          npm run build
+
+      - name: Commit version update
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add package.json dist/
+          git commit -m "chore: bump version to ${{ steps.calc-version.outputs.new_version }}" || exit 0
+
+      - name: Create and push tag
+        run: |
+          new_version="${{ steps.calc-version.outputs.new_version }}"
+          git tag -a "$new_version" -m "Release $new_version"
+          git push origin main
+          git push origin "$new_version"
+
+      - name: Generate release notes
+        id: generate-notes
+        run: |
+          new_version="${{ steps.calc-version.outputs.new_version }}"
+          latest_tag="${{ steps.get-latest-tag.outputs.latest_tag }}"
+          
+          # Create release notes
+          echo "## What's Changed" > release_notes.md
+          echo "" >> release_notes.md
+          
+          # Get commits since last tag
+          if [ "$latest_tag" != "v0.0.0" ]; then
+            git log --pretty=format:"- %s (%h)" "$latest_tag"..HEAD >> release_notes.md
+          else
+            git log --pretty=format:"- %s (%h)" >> release_notes.md
+          fi
+          
+          echo "" >> release_notes.md
+          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$latest_tag...$new_version" >> release_notes.md
+          
+          # Set output for release body
+          {
+            echo "release_body<<EOF"
+            cat release_notes.md
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.calc-version.outputs.new_version }}
+          release_name: Release ${{ steps.calc-version.outputs.new_version }}
+          body: ${{ steps.generate-notes.outputs.release_body }}
+          draft: false
+          prerelease: ${{ github.event.inputs.prerelease }}
+
+      - name: Update major version tag
+        if: github.event.inputs.prerelease == 'false'
+        run: |
+          new_version="${{ steps.calc-version.outputs.new_version }}"
+          version_without_v=${new_version#v}
+          IFS='.' read -ra VERSION_PARTS <<< "$version_without_v"
+          major_version="v${VERSION_PARTS[0]}"
+          
+          # Force update the major version tag
+          git tag -fa "$major_version" -m "Update major version tag to $new_version"
+          git push origin "$major_version" --force
+          
+          echo "Updated major version tag: $major_version"
+
+      - name: Summary
+        run: |
+          is_prerelease="${{ github.event.inputs.prerelease }}"
+          if [ "$is_prerelease" = "true" ]; then
+            echo "🎉 Successfully created prerelease ${{ steps.calc-version.outputs.new_version }}"
+          else
+            echo "🎉 Successfully created release ${{ steps.calc-version.outputs.new_version }}"
+          fi
+          echo "📦 Release type: ${{ github.event.inputs.release_type }}"
+          echo "🏷️ Previous version: ${{ steps.get-latest-tag.outputs.latest_tag }}"
+          echo "🆕 New version: ${{ steps.calc-version.outputs.new_version }}"
+          echo "🚀 Prerelease: $is_prerelease"

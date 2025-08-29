@@ -225,6 +225,6 @@ Inspired by the need for simple, powerful release automation in the GitHub Actio
 
 ---
 
-**Made with ❤️ by [dnogu](https://github.com/dnogu)**
+**Made by [dnogu](https://github.com/dnogu)**
 
 *If this action helped you, please consider giving it a ⭐ star!*
