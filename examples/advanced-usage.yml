@@ -1,0 +1,42 @@
+name: Advanced Release
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dnogu/semantic-release-action@v1
+        id: release
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          
+          # Custom labels
+          major-label: 'breaking'
+          minor-label: 'feature'
+          patch-label: 'bugfix'
+          prerelease-label: 'beta'
+          
+          # Build configuration
+          package-manager: 'npm'
+          test-command: 'npm run test:ci'
+          build-command: 'npm run build'
+          
+          # Release options
+          create-major-release: true
+          auto-generate-notes: true
+
+      - name: Notify on success
+        if: steps.release.outputs.released == 'true'
+        run: |
+          echo "🎉 Released ${{ steps.release.outputs.version }}"
+          echo "📝 Release URL: ${{ steps.release.outputs.release-url }}"
+          
+      - name: Deploy to production
+        if: steps.release.outputs.released == 'true' && steps.release.outputs.is-prerelease == 'false'
+        run: |
+          echo "🚀 Deploying stable release to production..."
+          # Add your deployment commands here
