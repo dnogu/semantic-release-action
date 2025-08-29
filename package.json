@@ -1,6 +1,6 @@
 {
   "name": "semantic-release-action",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Automated semantic versioning and release creation based on PR labels",
   "main": "dist/index.js",
   "scripts": {
