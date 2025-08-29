@@ -29953,6 +29953,7 @@ async function run() {
       testCommand: core.getInput('test-command'),
       buildCommand: core.getInput('build-command'),
       createMajorRelease: core.getBooleanInput('create-major-release'),
+      baseRelease: core.getBooleanInput('base_release'),
       copyAssets: core.getBooleanInput('copy-assets'),
       autoGenerateNotes: core.getBooleanInput('auto-generate-notes'),
       updatePackageJson: core.getBooleanInput('update-package-json'),
@@ -29963,7 +29964,7 @@ async function run() {
     };
 
     // Initialize GitHub client
-    const octokit = github.getRestClient(inputs.githubToken);
+    const octokit = github.getOctokit(inputs.githubToken);
     const context = github.context;
 
     core.info('🚀 Starting Semantic Release Action...');
@@ -30045,7 +30046,7 @@ async function run() {
     core.setOutput('tag-name', newVersion);
 
     // Create major version release if requested and not a prerelease
-    if (inputs.createMajorRelease && !isPrerelease) {
+    if (inputs.baseRelease && !isPrerelease) {
       const majorVersion = newVersion.split('.')[0]; // e.g., 'v1' from 'v1.2.3'
       
       const majorRelease = await createMajorRelease(octokit, context, {

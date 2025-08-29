@@ -37,7 +37,7 @@ async function run() {
     };
 
     // Initialize GitHub client
-    const octokit = github.getRestClient(inputs.githubToken);
+    const octokit = github.getOctokit(inputs.githubToken);
     const context = github.context;
 
     core.info('🚀 Starting Semantic Release Action...');
