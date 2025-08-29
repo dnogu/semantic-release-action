@@ -101,7 +101,7 @@ async function run() {
     // Create GitHub release
     const release = await createRelease(octokit, context, {
       tagName: newVersion,
-      name: `Release ${newVersion}`,
+      name: newVersion,
       body: releaseNotes,
       prerelease: isPrerelease
     });

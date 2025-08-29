@@ -29,7 +29,13 @@ jobs:
   release:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
       - uses: dnogu/semantic-release-action@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -50,7 +56,13 @@ jobs:
   release:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
       - uses: dnogu/semantic-release-action@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

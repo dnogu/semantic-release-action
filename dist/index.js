@@ -30028,7 +30028,7 @@ async function run() {
     // Create GitHub release
     const release = await createRelease(octokit, context, {
       tagName: newVersion,
-      name: `Release ${newVersion}`,
+      name: newVersion,
       body: releaseNotes,
       prerelease: isPrerelease
     });
@@ -30267,7 +30267,7 @@ async function createMajorRelease(octokit, context, options) {
       owner: context.repo.owner,
       repo: context.repo.repo,
       tag_name: majorVersion,
-      name: `Major Release ${majorVersion}`,
+      name: majorVersion,
       body: releaseNotes,
       draft: false,
       prerelease: false
@@ -30341,7 +30341,7 @@ async function deleteMajorReleaseIfExists(octokit, context, majorVersion) {
 }
 
 function createMajorReleaseNotes(majorVersion, fullVersion, originalRelease) {
-  const notes = `# Major Release ${majorVersion}
+  const notes = `# ${majorVersion}
 
 This major version tag points to the latest stable release: **${fullVersion}**
 
