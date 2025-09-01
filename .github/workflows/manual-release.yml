@@ -35,10 +35,25 @@ jobs:
       - name: Get latest tag
         id: get-latest-tag
         run: |
-          # Get the latest tag, fallback to v0.0.0 if no tags exist
-          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          # Fetch all tags to ensure we have the latest
+          git fetch --tags
+          
+          # Get all tags and filter for semantic version tags only (exclude major version tags like v1, v2)
+          all_tags=$(git tag --sort=-version:refname)
+          if [ -n "$all_tags" ]; then
+            # Filter for semantic version tags (v1.2.3 format, not just v1)
+            latest_tag=$(echo "$all_tags" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+            if [ -n "$latest_tag" ]; then
+              echo "latest_tag=$latest_tag" >> $GITHUB_OUTPUT
+              echo "Latest semantic version tag: $latest_tag"
+              exit 0
+            fi
+          fi
+          
+          # Fallback: try git describe but only for semantic version tags
+          latest_tag=$(git describe --tags --abbrev=0 --match="v*.*.*" 2>/dev/null || echo "v0.0.0")
           echo "latest_tag=$latest_tag" >> $GITHUB_OUTPUT
-          echo "Latest tag: $latest_tag"
+          echo "Latest tag (fallback): $latest_tag"
 
       - name: Calculate new version
         id: calc-version
@@ -120,6 +135,12 @@ jobs:
       - name: Create and push tag
         run: |
           new_version="${{ steps.calc-version.outputs.new_version }}"
+          
+          # Delete existing tag if it exists (locally and remote)
+          git tag -d "$new_version" 2>/dev/null || true
+          git push origin ":refs/tags/$new_version" 2>/dev/null || true
+          
+          # Create new tag
           git tag -a "$new_version" -m "$new_version"
           git push origin main
           git push origin "$new_version"
