@@ -129,8 +129,24 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add package.json dist/
-          git commit -m "chore: bump version to ${{ steps.calc-version.outputs.new_version }}" || exit 0
+          
+          # Check if this is a GitHub Action project and handle dist accordingly
+          if [ -f "action.yml" ] || [ -f "action.yaml" ]; then
+            echo "📝 Detected GitHub Action project - ensuring dist/ is committed..."
+            git add dist/ coverage/ package.json || true
+            
+            # Check if there are staged changes
+            if ! git diff --cached --quiet; then
+              echo "📝 Committing built files and version changes..."
+              git commit -m "build: update dist and version for ${{ steps.calc-version.outputs.new_version }}"
+            else
+              echo "No changes to commit"
+            fi
+          else
+            # Non-GitHub Action project
+            git add package.json || true
+            git commit -m "chore: bump version to ${{ steps.calc-version.outputs.new_version }}" || exit 0
+          fi
 
       - name: Create and push tag
         run: |

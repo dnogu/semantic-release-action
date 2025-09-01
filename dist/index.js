@@ -30176,14 +30176,36 @@ function configureGit(inputs) {
 
 async function commitChanges(newVersion, inputs) {
   try {
-    // Check if there are any changes to commit
-    const status = execSync('git status --porcelain', { encoding: 'utf8' });
-    if (status.trim()) {
-      core.info('📝 Committing version changes...');
-      execSync('git add .');
-      execSync(`git commit -m "chore: bump version to ${newVersion}"`);
+    // Check if this is a GitHub Action project
+    const isGitHubAction = fs.existsSync('action.yml') || fs.existsSync('action.yaml');
+    
+    if (isGitHubAction) {
+      core.info('📝 Detected GitHub Action project - ensuring dist/ is committed...');
+      
+      // Add built files that are essential for GitHub Actions
+      execSync('git add dist/ || true', { stdio: 'inherit' });
+      execSync('git add coverage/ || true', { stdio: 'inherit' });
+      execSync('git add package.json || true', { stdio: 'inherit' });
+      
+      // Check if there are staged changes
+      try {
+        execSync('git diff --cached --quiet', { stdio: 'pipe' });
+        core.info('No changes to commit');
+      } catch (error) {
+        // There are staged changes, commit them
+        core.info('📝 Committing built files and version changes...');
+        execSync(`git commit -m "build: update dist and version for ${newVersion}"`);
+      }
     } else {
-      core.info('No changes to commit');
+      // Non-GitHub Action project - use original logic
+      const status = execSync('git status --porcelain', { encoding: 'utf8' });
+      if (status.trim()) {
+        core.info('📝 Committing version changes...');
+        execSync('git add .');
+        execSync(`git commit -m "chore: bump version to ${newVersion}"`);
+      } else {
+        core.info('No changes to commit');
+      }
     }
   } catch (error) {
     core.info('No changes to commit or commit failed');
