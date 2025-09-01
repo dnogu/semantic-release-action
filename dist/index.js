@@ -30076,20 +30076,28 @@ function getLatestVersion() {
     // First try to get tags from remote to ensure we have the latest
     execSync('git fetch --tags', { stdio: 'pipe' });
     
-    // Get the latest tag
-    const latestTag = execSync('git describe --tags --abbrev=0', { encoding: 'utf8' }).trim();
-    return latestTag;
-  } catch (error) {
-    try {
-      // If git describe fails, try git tag with sorting
-      const tags = execSync('git tag --sort=-version:refname', { encoding: 'utf8' }).trim();
-      if (tags) {
-        const latestTag = tags.split('\n')[0];
-        return latestTag;
+    // Get all tags and filter for semantic version tags only (exclude major version tags like v1, v2)
+    const allTags = execSync('git tag --sort=-version:refname', { encoding: 'utf8' }).trim();
+    if (allTags) {
+      const tags = allTags.split('\n');
+      // Filter for semantic version tags (v1.2.3 format, not just v1)
+      const semverTags = tags.filter(tag => /^v\d+\.\d+\.\d+/.test(tag));
+      if (semverTags.length > 0) {
+        return semverTags[0]; // First one is the latest due to sorting
       }
-    } catch (e) {
-      // If both fail, no tags exist
     }
+    
+    // Fallback: try git describe but only for semantic version tags
+    try {
+      const latestTag = execSync('git describe --tags --abbrev=0 --match="v*.*.*"', { encoding: 'utf8' }).trim();
+      return latestTag;
+    } catch (e) {
+      // If no semantic version tags found
+    }
+    
+    core.info('No previous semantic version tags found, starting from v0.0.0');
+    return 'v0.0.0';
+  } catch (error) {
     core.info('No previous tags found, starting from v0.0.0');
     return 'v0.0.0';
   }
@@ -30184,6 +30192,23 @@ async function commitChanges(newVersion, inputs) {
 
 async function createAndPushTag(newVersion) {
   core.info(`🏷️ Creating and pushing tag: ${newVersion}`);
+  
+  // Delete existing tag if it exists (locally and remote)
+  try {
+    execSync(`git tag -d "${newVersion}"`, { stdio: 'pipe' });
+    core.info(`Deleted existing local tag: ${newVersion}`);
+  } catch (e) {
+    // Tag doesn't exist locally, that's fine
+  }
+  
+  try {
+    execSync(`git push origin ":refs/tags/${newVersion}"`, { stdio: 'pipe' });
+    core.info(`Deleted existing remote tag: ${newVersion}`);
+  } catch (e) {
+    // Tag doesn't exist remotely, that's fine
+  }
+  
+  // Create new tag
   execSync(`git tag -a "${newVersion}" -m "Release ${newVersion}"`);
   execSync(`git push origin HEAD`);
   execSync(`git push origin "${newVersion}"`);
