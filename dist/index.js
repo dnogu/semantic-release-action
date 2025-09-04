@@ -30187,15 +30187,9 @@ async function commitChanges(newVersion, inputs) {
       execSync('git add coverage/ || true', { stdio: 'inherit' });
       execSync('git add package.json || true', { stdio: 'inherit' });
       
-      // Check if there are staged changes
-      try {
-        execSync('git diff --cached --quiet', { stdio: 'pipe' });
-        core.info('No changes to commit');
-      } catch (error) {
-        // There are staged changes, commit them
-        core.info('📝 Committing built files and version changes...');
-        execSync(`git commit -m "build: update dist and version for ${newVersion}"`);
-      }
+      // For GitHub Actions, always commit to ensure dist/ is included in releases
+      core.info('📝 Committing built files and version changes...');
+      execSync(`git commit -m "build: update dist and version for ${newVersion}" || true`);
     } else {
       // Non-GitHub Action project - use original logic
       const status = execSync('git status --porcelain', { encoding: 'utf8' });
