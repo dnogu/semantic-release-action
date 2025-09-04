@@ -135,13 +135,9 @@ jobs:
             echo "📝 Detected GitHub Action project - ensuring dist/ is committed..."
             git add dist/ coverage/ package.json || true
             
-            # Check if there are staged changes
-            if ! git diff --cached --quiet; then
-              echo "📝 Committing built files and version changes..."
-              git commit -m "build: update dist and version for ${{ steps.calc-version.outputs.new_version }}"
-            else
-              echo "No changes to commit"
-            fi
+            # For GitHub Actions, always commit to ensure dist/ is included in releases
+            echo "📝 Committing built files and version changes..."
+            git commit -m "build: update dist and version for ${{ steps.calc-version.outputs.new_version }}" || true
           else
             # Non-GitHub Action project
             git add package.json || true
