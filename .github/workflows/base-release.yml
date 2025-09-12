@@ -94,7 +94,7 @@ jobs:
           
           # Create the major version release with multiline notes
           cat > release_notes.md << 'EOF'
-          # Major Release ${{ steps.extract-version.outputs.major_version }}
+          # ${{ steps.extract-version.outputs.major_version }}
 
           This major version tag points to the latest stable release: **${{ steps.extract-version.outputs.full_version }}**
 
@@ -111,10 +111,11 @@ jobs:
           sed -i "s/\${{ steps.extract-version.outputs.full_version }}/$full_version/g" release_notes.md
           sed -i "s/\${{ github.event.release.name }}/$release_name/g" release_notes.md
           
-          # Create the release
+          # Create the release (published, not draft)
           gh release create "$major_version" \
-            --title "Major Release $major_version" \
-            --notes-file release_notes.md
+            --title "$major_version" \
+            --notes-file release_notes.md \
+            --draft=false
           
           echo "✅ Created major version release: $major_version"
         env:
