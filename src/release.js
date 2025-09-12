@@ -48,8 +48,32 @@ async function createMajorRelease(octokit, context, options) {
       name: majorVersion,
       body: releaseNotes,
       draft: false,
-      prerelease: false
+      prerelease: false,
+      make_latest: 'false'
     });
+    
+    // Verify the release was created as published (not draft)
+    core.info(`Created major release: ${majorRelease.data.html_url}`);
+    core.info(`Release draft status: ${majorRelease.data.draft}`);
+    
+    if (majorRelease.data.draft) {
+      core.warning(`⚠️ Major release ${majorVersion} was created as draft despite draft: false`);
+      
+      // Try to publish it explicitly
+      try {
+        const updatedRelease = await octokit.rest.repos.updateRelease({
+          owner: context.repo.owner,
+          repo: context.repo.repo,
+          release_id: majorRelease.data.id,
+          draft: false
+        });
+        core.info(`✅ Successfully published major release ${majorVersion}`);
+      } catch (updateError) {
+        core.warning(`Failed to publish major release: ${updateError.message}`);
+      }
+    } else {
+      core.info(`✅ Major release ${majorVersion} created as published`);
+    }
     
     // Copy assets if requested
     if (copyAssets && originalRelease) {
