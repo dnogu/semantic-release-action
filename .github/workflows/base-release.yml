@@ -81,7 +81,7 @@ jobs:
         if: steps.check-release.outputs.release_exists == 'true'
         run: |
           major_version="${{ steps.extract-version.outputs.major_version }}"
-          gh release delete "$major_version" --yes
+          gh release delete "$major_version" --yes || echo "Failed to delete existing release, continuing..."
           echo "Deleted existing major release: $major_version"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -112,12 +112,23 @@ jobs:
           sed -i "s/\${{ github.event.release.name }}/$release_name/g" release_notes.md
           
           # Create the release (published, not draft)
-          gh release create "$major_version" \
+          if gh release create "$major_version" \
             --title "$major_version" \
             --notes-file release_notes.md \
-            --draft=false
-          
-          echo "✅ Created major version release: $major_version"
+            --draft=false \
+            --latest=false; then
+            echo "✅ Created major version release: $major_version"
+            
+            # Verify the release was created and is published
+            if gh release view "$major_version" --json isDraft --jq '.isDraft' | grep -q false; then
+              echo "✅ Verified: Release is published (not draft)"
+            else
+              echo "⚠️ Warning: Release may still be in draft state"
+            fi
+          else
+            echo "❌ Failed to create major version release: $major_version"
+            exit 1
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
