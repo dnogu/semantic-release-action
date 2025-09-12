@@ -27,7 +27,37 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check if action already created major release
+        id: check-action-created
+        run: |
+          # Check if this was triggered by a release event
+          if [ "${{ github.event_name }}" = "release" ]; then
+            release_tag="${{ github.event.release.tag_name }}"
+            version_without_v=${release_tag#v}
+            IFS='.' read -ra VERSION_PARTS <<< "$version_without_v"
+            major_version="v${VERSION_PARTS[0]}"
+            
+            # Check if major version release already exists and was created recently (within last 5 minutes)
+            if gh release view "$major_version" --json createdAt --jq '.createdAt' 2>/dev/null; then
+              created_at=$(gh release view "$major_version" --json createdAt --jq '.createdAt')
+              created_timestamp=$(date -d "$created_at" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$created_at" +%s 2>/dev/null || echo "0")
+              current_timestamp=$(date +%s)
+              time_diff=$((current_timestamp - created_timestamp))
+              
+              if [ $time_diff -lt 300 ]; then  # 5 minutes = 300 seconds
+                echo "action_already_created=true" >> $GITHUB_OUTPUT
+                echo "Major release $major_version was created within the last 5 minutes, skipping workflow"
+                exit 0
+              fi
+            fi
+          fi
+          
+          echo "action_already_created=false" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract major version
+        if: steps.check-action-created.outputs.action_already_created == 'false'
         id: extract-version
         run: |
           release_tag="${{ github.event.release.tag_name }}"
@@ -43,6 +73,7 @@ jobs:
           echo "Major version: $major_version"
 
       - name: Update major version tag
+        if: steps.check-action-created.outputs.action_already_created == 'false'
         run: |
           major_version="${{ steps.extract-version.outputs.major_version }}"
           full_version="${{ steps.extract-version.outputs.full_version }}"
@@ -62,6 +93,7 @@ jobs:
           echo "✅ Updated major version tag: $major_version → $full_version"
 
       - name: Check if major release exists
+        if: steps.check-action-created.outputs.action_already_created == 'false'
         id: check-release
         run: |
           major_version="${{ steps.extract-version.outputs.major_version }}"
@@ -78,7 +110,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Delete existing major release
-        if: steps.check-release.outputs.release_exists == 'true'
+        if: steps.check-action-created.outputs.action_already_created == 'false' && steps.check-release.outputs.release_exists == 'true'
         run: |
           major_version="${{ steps.extract-version.outputs.major_version }}"
           gh release delete "$major_version" --yes || echo "Failed to delete existing release, continuing..."
@@ -87,6 +119,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create major version release
+        if: steps.check-action-created.outputs.action_already_created == 'false'
         run: |
           major_version="${{ steps.extract-version.outputs.major_version }}"
           full_version="${{ steps.extract-version.outputs.full_version }}"
@@ -133,6 +166,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Copy release assets
+        if: steps.check-action-created.outputs.action_already_created == 'false'
         run: |
           major_version="${{ steps.extract-version.outputs.major_version }}"
           full_version="${{ steps.extract-version.outputs.full_version }}"
@@ -163,6 +197,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Summary
+        if: steps.check-action-created.outputs.action_already_created == 'false'
         run: |
           major_version="${{ steps.extract-version.outputs.major_version }}"
           full_version="${{ steps.extract-version.outputs.full_version }}"
@@ -171,3 +206,9 @@ jobs:
           echo "📦 Major version: $major_version"
           echo "🎯 Points to: $full_version"
           echo "🔗 Release URL: ${{ github.event.release.html_url }}"
+
+      - name: Skip Summary
+        if: steps.check-action-created.outputs.action_already_created == 'true'
+        run: |
+          echo "ℹ️ Skipped creating major version release because it was already created by the action itself"
+          echo "This prevents duplicate major version releases when using base_release: true"
