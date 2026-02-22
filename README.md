@@ -248,7 +248,7 @@ The action intelligently detects your project type and commands:
 
 ## �� Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+We welcome contributions. Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
 ## 📝 License
 
