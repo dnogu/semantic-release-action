@@ -86,59 +86,39 @@ describe('release', () => {
   });
 
   describe('createMajorRelease', () => {
-    test('creates major release, updates tag and copies assets', async () => {
+    test('updates major tag and removes old major release if present', async () => {
       const octokit = {
         rest: {
           repos: {
-            getReleaseByTag: jest.fn().mockRejectedValue({ status: 404 }),
-            createRelease: jest.fn().mockResolvedValue({
-              data: { id: 10, html_url: 'https://example.com/release/v1', draft: false }
-            }),
-            getReleaseAsset: jest.fn().mockResolvedValue({ data: Buffer.from('asset-bytes') }),
-            uploadReleaseAsset: jest.fn().mockResolvedValue({})
+            getReleaseByTag: jest.fn().mockResolvedValue({ data: { id: 222 } }),
+            deleteRelease: jest.fn().mockResolvedValue({})
           }
         }
-      };
-
-      const originalRelease = {
-        name: 'v1.2.3',
-        body: 'Original notes',
-        assets: [{ id: 5, name: 'artifact.tgz', content_type: 'application/gzip', size: 11 }]
       };
 
       const result = await createMajorRelease(octokit, context, {
         majorVersion: 'v1',
         fullVersion: 'v1.2.3',
-        originalRelease,
+        originalRelease: { name: 'v1.2.3', body: 'Original notes', assets: [] },
         copyAssets: true
       });
 
       expect(execSync).toHaveBeenCalledWith('git tag -a "v1" -m "Major version tag pointing to v1.2.3"');
       expect(execSync).toHaveBeenCalledWith('git push origin "v1"');
-      expect(octokit.rest.repos.createRelease).toHaveBeenCalledWith({
+      expect(octokit.rest.repos.deleteRelease).toHaveBeenCalledWith({
         owner: 'octocat',
         repo: 'demo-repo',
-        tag_name: 'v1',
-        name: 'v1',
-        body: expect.stringContaining('latest stable release: **v1.2.3**'),
-        draft: false,
-        prerelease: false,
-        make_latest: 'false'
+        release_id: 222
       });
-      expect(octokit.rest.repos.getReleaseAsset).toHaveBeenCalledTimes(1);
-      expect(octokit.rest.repos.uploadReleaseAsset).toHaveBeenCalledTimes(1);
-      expect(result).toEqual({ id: 10, html_url: 'https://example.com/release/v1', draft: false });
+      expect(result).toEqual({ tag: 'v1', version: 'v1.2.3' });
     });
 
-    test('publishes major release explicitly if GitHub returns it as draft', async () => {
+    test('returns success when no major release exists yet', async () => {
       const octokit = {
         rest: {
           repos: {
             getReleaseByTag: jest.fn().mockRejectedValue({ status: 404 }),
-            createRelease: jest.fn().mockResolvedValue({
-              data: { id: 20, html_url: 'https://example.com/release/v2', draft: true }
-            }),
-            updateRelease: jest.fn().mockResolvedValue({ data: { id: 20, draft: false } })
+            deleteRelease: jest.fn()
           }
         }
       };
@@ -150,13 +130,8 @@ describe('release', () => {
         copyAssets: false
       });
 
-      expect(octokit.rest.repos.updateRelease).toHaveBeenCalledWith({
-        owner: 'octocat',
-        repo: 'demo-repo',
-        release_id: 20,
-        draft: false
-      });
-      expect(result.id).toBe(20);
+      expect(octokit.rest.repos.deleteRelease).not.toHaveBeenCalled();
+      expect(result).toEqual({ tag: 'v2', version: 'v2.0.0' });
     });
 
     test('returns null when major release flow fails', async () => {
@@ -184,7 +159,7 @@ describe('release', () => {
 
       expect(result).toBeNull();
       expect(core.warning).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to create major version release: Cannot create tag')
+        expect.stringContaining('Failed to sync major version tag: Cannot create tag')
       );
     });
   });
@@ -253,7 +228,7 @@ describe('release', () => {
 
       await deleteMajorReleaseIfExists(octokit, context, 'v1');
 
-      expect(core.info).toHaveBeenCalledWith("Major release v1 doesn't exist, creating new one");
+      expect(core.info).toHaveBeenCalledWith("Major release v1 doesn't exist, nothing to delete");
     });
 
     test('logs warning on non-404 errors', async () => {

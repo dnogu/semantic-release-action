@@ -145,7 +145,7 @@ describe('main.run', () => {
     expect(release.createRelease).not.toHaveBeenCalled();
   });
 
-  test('executes full stable release flow and creates major release', async () => {
+  test('executes full stable release flow and syncs major tag without second release', async () => {
     setupCoreInputs({ 'working-directory': './project-dir' });
     setupFs({ packageJson: true, actionYml: true });
 
@@ -159,9 +159,7 @@ describe('main.run', () => {
       body: 'Release body',
       assets: []
     });
-    release.createMajorRelease.mockResolvedValue({
-      html_url: 'https://example.com/releases/v1'
-    });
+    release.createMajorRelease.mockResolvedValue({ tag: 'v1', version: 'v1.3.0' });
 
     const chdirSpy = jest.spyOn(process, 'chdir').mockImplementation(() => {});
 
@@ -186,8 +184,7 @@ describe('main.run', () => {
       github.context,
       expect.objectContaining({
         majorVersion: 'v1',
-        fullVersion: 'v1.3.0',
-        copyAssets: true
+        fullVersion: 'v1.3.0'
       })
     );
     expect(core.setOutput).toHaveBeenCalledWith('released', 'true');
@@ -196,7 +193,7 @@ describe('main.run', () => {
     expect(core.setOutput).toHaveBeenCalledWith('major-version', 'v1');
     expect(core.setOutput).toHaveBeenCalledWith(
       'major-release-url',
-      'https://example.com/releases/v1'
+      'https://example.com/releases/v1.3.0'
     );
 
     chdirSpy.mockRestore();
