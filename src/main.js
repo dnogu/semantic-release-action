@@ -118,21 +118,19 @@ async function run() {
     core.setOutput('release-id', release.id.toString());
     core.setOutput('tag-name', newVersion);
 
-    // Create major version release if requested and not a prerelease
+    // Sync major version tag if requested and not a prerelease
     if (inputs.baseRelease && !isPrerelease) {
       const majorVersion = newVersion.split('.')[0]; // e.g., 'v1' from 'v1.2.3'
       
       const majorRelease = await createMajorRelease(octokit, context, {
         majorVersion,
-        fullVersion: newVersion,
-        originalRelease: release,
-        copyAssets: inputs.copyAssets
+        fullVersion: newVersion
       });
 
       if (majorRelease) {
-        core.info(`✅ Created major version release: ${majorRelease.html_url}`);
+        core.info(`✅ Synced major version tag ${majorVersion} to ${newVersion}`);
         core.setOutput('major-version', majorVersion);
-        core.setOutput('major-release-url', majorRelease.html_url);
+        core.setOutput('major-release-url', release.html_url);
       }
     }
 

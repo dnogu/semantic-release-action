@@ -84,7 +84,7 @@ When you merge a PR with labels, the action automatically:
 - Runs tests and builds your project
 - Creates a git tag and GitHub release
 - Generates release notes from commits
-- **With `base_release: true`**: Creates/updates major version tags (v1, v2, etc.)
+- **With `base_release: true`**: Updates major version tags (v1, v2, etc.) to the latest release without creating a second major-tag release entry
 
 ## 📚 Full Configuration
 
@@ -116,7 +116,7 @@ When you merge a PR with labels, the action automatically:
     
     # Release options
     create-major-release: true  # Create full version releases (v1.2.3)
-    base_release: true          # Create/update major version tags (v1, v2, etc.)
+    base_release: true          # Update major version tags (v1, v2, etc.) to point to the latest stable release
     copy-assets: true
     auto-generate-notes: true
     
@@ -158,7 +158,7 @@ The action provides useful outputs for downstream jobs:
 | `release-url` | URL of the created release | `https://github.com/...` |
 | `release-id` | ID of the created release | `12345` |
 | `major-version` | Major version tag | `v1` |
-| `major-release-url` | URL of major version release | `https://github.com/...` |
+| `major-release-url` | URL of the release currently targeted by the major version tag | `https://github.com/...` |
 | `tag-name` | Git tag that was created | `v1.2.3` |
 
 ## 🎭 Usage Scenarios
@@ -222,14 +222,14 @@ jobs:
 
 ## 🔧 Advanced Features
 
-### Major Version Releases
+### Major Version Tags
 
-The action automatically creates and maintains major version releases:
+The action automatically creates and maintains major version tags:
 
-- When you release `v1.2.3`, it also creates/updates `v1` release
-- `v1` always points to the latest `v1.x.x` stable release
+- When you release `v1.2.3`, it updates `v1` to point at that release commit
+- Any existing `v1` release entry is removed so there is no duplicate major-tag release
 - Great for action consumers who want `uses: your-action@v1`
-- Prerelease versions don't update major version releases
+- Prerelease versions don't update major version tags
 
 ### Smart Command Detection
 

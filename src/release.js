@@ -1,6 +1,5 @@
 const core = require('@actions/core');
 const { execSync } = require('child_process');
-const { sleep } = require('./utils');
 
 async function createRelease(octokit, context, options) {
   const { tagName, name, body, prerelease = false } = options;
@@ -26,63 +25,21 @@ async function createRelease(octokit, context, options) {
 }
 
 async function createMajorRelease(octokit, context, options) {
-  const { majorVersion, fullVersion, originalRelease, copyAssets } = options;
+  const { majorVersion, fullVersion } = options;
   
   try {
-    core.info(`Creating major version release: ${majorVersion}`);
+    core.info(`Syncing major version tag: ${majorVersion}`);
     
     // Update major version tag
     await updateMajorVersionTag(majorVersion, fullVersion);
     
-    // Check if major release already exists and delete it
+    // Remove any old major-tag release so we only keep the full semantic release
     await deleteMajorReleaseIfExists(octokit, context, majorVersion);
-    
-    // Create release notes for major version
-    const releaseNotes = createMajorReleaseNotes(majorVersion, fullVersion, originalRelease);
-    
-    // Create the major version release
-    const majorRelease = await octokit.rest.repos.createRelease({
-      owner: context.repo.owner,
-      repo: context.repo.repo,
-      tag_name: majorVersion,
-      name: majorVersion,
-      body: releaseNotes,
-      draft: false,
-      prerelease: false,
-      make_latest: 'false'
-    });
-    
-    // Verify the release was created as published (not draft)
-    core.info(`Created major release: ${majorRelease.data.html_url}`);
-    core.info(`Release draft status: ${majorRelease.data.draft}`);
-    
-    if (majorRelease.data.draft) {
-      core.warning(`⚠️ Major release ${majorVersion} was created as draft despite draft: false`);
-      
-      // Try to publish it explicitly
-      try {
-        const updatedRelease = await octokit.rest.repos.updateRelease({
-          owner: context.repo.owner,
-          repo: context.repo.repo,
-          release_id: majorRelease.data.id,
-          draft: false
-        });
-        core.info(`✅ Successfully published major release ${majorVersion}`);
-      } catch (updateError) {
-        core.warning(`Failed to publish major release: ${updateError.message}`);
-      }
-    } else {
-      core.info(`✅ Major release ${majorVersion} created as published`);
-    }
-    
-    // Copy assets if requested
-    if (copyAssets && originalRelease) {
-      await copyReleaseAssets(octokit, context, originalRelease, majorRelease.data);
-    }
-    
-    return majorRelease.data;
+
+    core.info(`✅ Major version tag ${majorVersion} now points to ${fullVersion}`);
+    return { tag: majorVersion, version: fullVersion };
   } catch (error) {
-    core.warning(`Failed to create major version release: ${error.message}`);
+    core.warning(`Failed to sync major version tag: ${error.message}`);
     return null;
   }
 }
@@ -135,7 +92,7 @@ async function deleteMajorReleaseIfExists(octokit, context, majorVersion) {
   } catch (error) {
     if (error.status === 404) {
       // Release doesn't exist, that's fine
-      core.info(`Major release ${majorVersion} doesn't exist, creating new one`);
+      core.info(`Major release ${majorVersion} doesn't exist, nothing to delete`);
     } else {
       core.warning(`Error checking for existing major release: ${error.message}`);
     }
