@@ -263,10 +263,63 @@ describe('main.run', () => {
       'git commit -m "build: update dist and version for v1.3.0"',
       { stdio: 'inherit' }
     );
+    expect(execSync).toHaveBeenCalledWith('git fetch origin "feature/release-prep"');
+    expect(execSync).toHaveBeenCalledWith('git rebase "origin/feature/release-prep"');
     expect(execSync).toHaveBeenCalledWith('git push origin HEAD:feature/release-prep');
     expect(release.createRelease).not.toHaveBeenCalled();
     expect(core.setOutput).toHaveBeenCalledWith('released', 'false');
     expect(core.setOutput).toHaveBeenCalledWith('version', 'v1.3.0');
+  });
+
+  test('retries prepare push once when the PR branch moves during the run', async () => {
+    setupCoreInputs({
+      'package-json-mode': 'update',
+      'execution-mode': 'prepare'
+    });
+    setupFs({ packageJson: true, actionYml: true });
+    setupExecSync({ stagedChanges: true });
+
+    github.context.payload.pull_request = {
+      merged: false,
+      labels: [{ name: 'minor' }],
+      head: {
+        ref: 'feature/release-prep',
+        repo: { full_name: 'octocat/demo-repo' }
+      }
+    };
+
+    utils.detectTriggerMode.mockReturnValue('pr-open');
+    utils.detectExecutionMode.mockReturnValue('prepare');
+    utils.parseLabels.mockReturnValue({ releaseType: 'minor', isPrerelease: false });
+    version.calculateVersion.mockReturnValue('v1.3.0');
+
+    const baseExecSync = execSync.getMockImplementation();
+    let pushAttempts = 0;
+    execSync.mockImplementation(command => {
+      if (command === 'git push origin HEAD:feature/release-prep') {
+        pushAttempts += 1;
+        if (pushAttempts === 1) {
+          throw new Error('Updates were rejected because a pushed branch tip is behind its remote counterpart');
+        }
+      }
+
+      return baseExecSync(command);
+    });
+
+    await run();
+
+    expect(core.warning).toHaveBeenCalledWith(
+      'Remote PR branch moved while prepare mode was running. Retrying push for feature/release-prep.'
+    );
+    expect(
+      execSync.mock.calls.filter(([command]) => command === 'git fetch origin "feature/release-prep"')
+    ).toHaveLength(2);
+    expect(
+      execSync.mock.calls.filter(([command]) => command === 'git rebase "origin/feature/release-prep"')
+    ).toHaveLength(2);
+    expect(
+      execSync.mock.calls.filter(([command]) => command === 'git push origin HEAD:feature/release-prep')
+    ).toHaveLength(2);
   });
 
   test('can verify package.json and create a tag without pushing the branch', async () => {
