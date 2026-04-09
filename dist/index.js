@@ -29936,7 +29936,6 @@ const { createRelease, createMajorRelease } = __nccwpck_require__(5712);
 
 async function run() {
   try {
-    // Get inputs
     const inputs = {
       githubToken: core.getInput('github-token', { required: true }),
       majorLabel: core.getInput('major-label'),
@@ -29965,28 +29964,24 @@ async function run() {
       commitChanges: core.getBooleanInput('commit-changes')
     };
 
-    // Initialize GitHub client
     const octokit = github.getOctokit(inputs.githubToken);
     const context = github.context;
 
     core.info('🚀 Starting Semantic Release Action...');
-    
-    // Change to working directory if specified
+
     if (inputs.workingDirectory !== '.') {
       process.chdir(inputs.workingDirectory);
       core.info(`📁 Changed working directory to: ${inputs.workingDirectory}`);
     }
 
-    // Detect trigger mode
     const triggerMode = detectTriggerMode(inputs.triggerMode, context);
     core.info(`🔍 Detected trigger mode: ${triggerMode}`);
 
     const executionMode = detectExecutionMode(inputs.executionMode, triggerMode);
     core.info(`🧭 Execution mode: ${executionMode}`);
 
-    // Parse labels to determine release type
     const { releaseType, isPrerelease } = parseLabels(context, inputs, triggerMode);
-    
+
     if (releaseType === 'none') {
       core.info('ℹ️ No release labels found. Skipping release creation.');
       core.setOutput('released', 'false');
@@ -29996,11 +29991,9 @@ async function run() {
 
     core.info(`📦 Release type: ${releaseType}${isPrerelease ? ' (prerelease)' : ''}`);
 
-    // Get latest version
     const latestVersion = getLatestVersion();
     core.info(`🏷️ Latest version: ${latestVersion}`);
 
-    // Calculate new version
     const newVersion = calculateVersion(latestVersion, releaseType, isPrerelease, inputs);
     core.info(`🆕 New version: ${newVersion}`);
 
@@ -30016,76 +30009,17 @@ async function run() {
     });
 
     if (executionMode === 'validate') {
-      core.info('🧪 Validation mode enabled. Skipping build, tag, and release creation.');
+      core.info('🧪 Validation mode enabled. Skipping build, branch push, tag, and release creation.');
       return;
     }
 
-    // Setup Node.js and install dependencies
-    await setupNodeAndDependencies(inputs);
-
-    // Run tests
-    await runTests(inputs);
-
-    // Build project
-    await runBuild(inputs);
-
-    // Configure git
-    configureGit(inputs);
-
-    // Commit changes if any
-    let shouldPushBranch = false;
-    if (inputs.commitChanges) {
-      shouldPushBranch = await commitChanges(newVersion, inputs);
-    } else {
-      core.info('📝 Skipping commit step because commit-changes is disabled');
+    if (executionMode === 'prepare') {
+      await preparePullRequestRelease(context, inputs, newVersion);
+      core.info('✅ Pull request release preparation completed');
+      return;
     }
 
-    // Create and push tag
-    await createAndPushTag(newVersion, { pushBranch: shouldPushBranch });
-
-    // Generate release notes
-    const releaseNotes = generateReleaseNotes(latestVersion, newVersion, inputs);
-
-    // Create GitHub release
-    const release = await createRelease(octokit, context, {
-      tagName: newVersion,
-      name: newVersion,
-      body: releaseNotes,
-      prerelease: isPrerelease
-    });
-
-    core.info(`✅ Created release: ${release.html_url}`);
-
-    // Set outputs
-    setReleaseOutputs({
-      released: true,
-      version: newVersion,
-      previousVersion: latestVersion,
-      releaseType,
-      isPrerelease,
-      tagName: newVersion
-    });
-    core.setOutput('release-url', release.html_url);
-    core.setOutput('release-id', release.id.toString());
-
-    // Sync major version tag if requested and not a prerelease
-    if (inputs.baseRelease && !isPrerelease) {
-      const majorVersion = newVersion.split('.')[0]; // e.g., 'v1' from 'v1.2.3'
-      
-      const majorRelease = await createMajorRelease(octokit, context, {
-        majorVersion,
-        fullVersion: newVersion
-      });
-
-      if (majorRelease) {
-        core.info(`✅ Synced major version tag ${majorVersion} to ${newVersion}`);
-        core.setOutput('major-version', majorVersion);
-        core.setOutput('major-release-url', release.html_url);
-      }
-    }
-
-    core.info('🎉 Semantic release completed successfully!');
-
+    await createFinalRelease(octokit, context, inputs, latestVersion, newVersion, releaseType, isPrerelease);
   } catch (error) {
     core.error(`❌ Action failed: ${error.message}`);
     core.setFailed(error.message);
@@ -30123,30 +30057,104 @@ function setReleaseOutputs({ released, version, previousVersion, releaseType, is
   core.setOutput('tag-name', tagName);
 }
 
+async function preparePullRequestRelease(context, inputs, newVersion) {
+  core.info('🛠️ Prepare mode enabled. Running install, test, and build without creating a tag or release.');
+
+  await setupNodeAndDependencies(inputs);
+  await runTests(inputs);
+  await runBuild(inputs);
+
+  if (!inputs.commitChanges) {
+    core.info('📝 Skipping commit step because commit-changes is disabled');
+    return;
+  }
+
+  configureGit(inputs);
+
+  const committed = await commitChanges(newVersion, inputs);
+  if (committed) {
+    await pushBranchChanges(context);
+  } else {
+    core.info('No branch changes to push after PR preparation');
+  }
+}
+
+async function createFinalRelease(octokit, context, inputs, latestVersion, newVersion, releaseType, isPrerelease) {
+  await setupNodeAndDependencies(inputs);
+  await runTests(inputs);
+  await runBuild(inputs);
+
+  configureGit(inputs);
+
+  let shouldPushBranch = false;
+  if (inputs.commitChanges) {
+    shouldPushBranch = await commitChanges(newVersion, inputs);
+  } else {
+    core.info('📝 Skipping commit step because commit-changes is disabled');
+  }
+
+  await createAndPushTag(newVersion, { pushBranch: shouldPushBranch });
+
+  const releaseNotes = generateReleaseNotes(latestVersion, newVersion, inputs);
+
+  const release = await createRelease(octokit, context, {
+    tagName: newVersion,
+    name: newVersion,
+    body: releaseNotes,
+    prerelease: isPrerelease
+  });
+
+  core.info(`✅ Created release: ${release.html_url}`);
+
+  setReleaseOutputs({
+    released: true,
+    version: newVersion,
+    previousVersion: latestVersion,
+    releaseType,
+    isPrerelease,
+    tagName: newVersion
+  });
+  core.setOutput('release-url', release.html_url);
+  core.setOutput('release-id', release.id.toString());
+
+  if (inputs.baseRelease && !isPrerelease) {
+    const majorVersion = newVersion.split('.')[0];
+
+    const majorRelease = await createMajorRelease(octokit, context, {
+      majorVersion,
+      fullVersion: newVersion
+    });
+
+    if (majorRelease) {
+      core.info(`✅ Synced major version tag ${majorVersion} to ${newVersion}`);
+      core.setOutput('major-version', majorVersion);
+      core.setOutput('major-release-url', release.html_url);
+    }
+  }
+
+  core.info('🎉 Semantic release completed successfully!');
+}
+
 function getLatestVersion() {
   try {
-    // First try to get tags from remote to ensure we have the latest
     execSync('git fetch --tags', { stdio: 'pipe' });
-    
-    // Get all tags and filter for semantic version tags only (exclude major version tags like v1, v2)
+
     const allTags = execSync('git tag --sort=-version:refname', { encoding: 'utf8' }).trim();
     if (allTags) {
       const tags = allTags.split('\n');
-      // Filter for semantic version tags (v1.2.3 format, not just v1)
       const semverTags = tags.filter(tag => /^v\d+\.\d+\.\d+/.test(tag));
       if (semverTags.length > 0) {
-        return semverTags[0]; // First one is the latest due to sorting
+        return semverTags[0];
       }
     }
-    
-    // Fallback: try git describe but only for semantic version tags
+
     try {
       const latestTag = execSync('git describe --tags --abbrev=0 --match="v*.*.*"', { encoding: 'utf8' }).trim();
       return latestTag;
-    } catch (e) {
-      // If no semantic version tags found
+    } catch (error) {
+      // No semantic version tags found.
     }
-    
+
     core.info('No previous semantic version tags found, starting from v0.0.0');
     return 'v0.0.0';
   } catch (error) {
@@ -30157,17 +30165,15 @@ function getLatestVersion() {
 
 async function setupNodeAndDependencies(inputs) {
   core.info('📦 Setting up dependencies...');
-  
-  // Auto-detect install command if not provided
+
   let installCmd = inputs.installCommand;
   if (!installCmd) {
-    const packageManager = inputs.packageManager;
     const commands = {
       npm: 'npm ci',
       yarn: 'yarn install --frozen-lockfile',
       pnpm: 'pnpm install --frozen-lockfile'
     };
-    installCmd = commands[packageManager] || 'npm ci';
+    installCmd = commands[inputs.packageManager] || 'npm ci';
   }
 
   if (fs.existsSync('package.json')) {
@@ -30180,14 +30186,11 @@ async function setupNodeAndDependencies(inputs) {
 
 async function runTests(inputs) {
   let testCmd = inputs.testCommand;
-  
-  if (!testCmd) {
-    // Auto-detect test command
-    if (fs.existsSync('package.json')) {
-      const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-      if (pkg.scripts && pkg.scripts.test) {
-        testCmd = `${inputs.packageManager} test`;
-      }
+
+  if (!testCmd && fs.existsSync('package.json')) {
+    const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+    if (pkg.scripts && pkg.scripts.test) {
+      testCmd = `${inputs.packageManager} test`;
     }
   }
 
@@ -30201,14 +30204,11 @@ async function runTests(inputs) {
 
 async function runBuild(inputs) {
   let buildCmd = inputs.buildCommand;
-  
-  if (!buildCmd) {
-    // Auto-detect build command
-    if (fs.existsSync('package.json')) {
-      const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-      if (pkg.scripts && pkg.scripts.build) {
-        buildCmd = `${inputs.packageManager} run build`;
-      }
+
+  if (!buildCmd && fs.existsSync('package.json')) {
+    const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+    if (pkg.scripts && pkg.scripts.build) {
+      buildCmd = `${inputs.packageManager} run build`;
     }
   }
 
@@ -30228,21 +30228,18 @@ function configureGit(inputs) {
 
 async function commitChanges(newVersion, inputs) {
   try {
-    // Check if this is a GitHub Action project
     const isGitHubAction = fs.existsSync('action.yml') || fs.existsSync('action.yaml');
-    
+
     if (isGitHubAction) {
       core.info('📝 Detected GitHub Action project - ensuring dist/ is committed...');
-      
-      // Add built files that are essential for GitHub Actions
+
       tryGitAdd('dist/');
       tryGitAdd('coverage/');
 
       if (resolvePackageJsonMode(inputs) === 'update') {
         tryGitAdd(inputs.packageJsonPath);
       }
-      
-      // For GitHub Actions, always commit to ensure dist/ is included in releases
+
       if (!hasStagedChanges()) {
         core.info('No staged changes to commit');
         return false;
@@ -30253,19 +30250,18 @@ async function commitChanges(newVersion, inputs) {
         stdio: 'inherit'
       });
       return true;
-    } else {
-      // Non-GitHub Action project - use original logic
-      const status = execSync('git status --porcelain', { encoding: 'utf8' });
-      if (status.trim()) {
-        core.info('📝 Committing version changes...');
-        execSync('git add .');
-        execSync(`git commit -m "chore: bump version to ${newVersion}"`, { stdio: 'inherit' });
-        return true;
-      } else {
-        core.info('No changes to commit');
-        return false;
-      }
     }
+
+    const status = execSync('git status --porcelain', { encoding: 'utf8' });
+    if (status.trim()) {
+      core.info('📝 Committing version changes...');
+      execSync('git add .');
+      execSync(`git commit -m "chore: bump version to ${newVersion}"`, { stdio: 'inherit' });
+      return true;
+    }
+
+    core.info('No changes to commit');
+    return false;
   } catch (error) {
     core.info('No changes to commit or commit failed');
     return false;
@@ -30289,26 +30285,41 @@ function tryGitAdd(pathspec) {
   }
 }
 
+async function pushBranchChanges(context) {
+  const headRepo = context.payload.pull_request?.head?.repo?.full_name;
+  const baseRepo = `${context.repo.owner}/${context.repo.repo}`;
+  const headRef = context.payload.pull_request?.head?.ref;
+
+  if (!headRef) {
+    throw new Error('Unable to determine the pull request branch to push changes back to');
+  }
+
+  if (headRepo && headRepo !== baseRepo) {
+    throw new Error('Cannot push preparation changes to a pull request from a fork');
+  }
+
+  core.info(`⬆️ Pushing preparation changes back to PR branch: ${headRef}`);
+  execSync(`git push origin HEAD:${headRef}`);
+}
+
 async function createAndPushTag(newVersion, options = {}) {
   const { pushBranch = false } = options;
   core.info(`🏷️ Creating and pushing tag: ${newVersion}`);
-  
-  // Delete existing tag if it exists (locally and remote)
+
   try {
     execSync(`git tag -d "${newVersion}"`, { stdio: 'pipe' });
     core.info(`Deleted existing local tag: ${newVersion}`);
-  } catch (e) {
-    // Tag doesn't exist locally, that's fine
+  } catch (error) {
+    // Tag doesn't exist locally.
   }
-  
+
   try {
     execSync(`git push origin ":refs/tags/${newVersion}"`, { stdio: 'pipe' });
     core.info(`Deleted existing remote tag: ${newVersion}`);
-  } catch (e) {
-    // Tag doesn't exist remotely, that's fine
+  } catch (error) {
+    // Tag doesn't exist remotely.
   }
-  
-  // Create new tag
+
   execSync(`git tag -a "${newVersion}" -m "Release ${newVersion}"`);
 
   if (pushBranch) {
@@ -30326,20 +30337,14 @@ function generateReleaseNotes(latestVersion, newVersion, inputs) {
   }
 
   core.info('📝 Generating release notes...');
-  
+
   let notes = '## What\'s Changed\n\n';
-  
+
   try {
-    let commitRange;
-    if (latestVersion === 'v0.0.0') {
-      commitRange = 'HEAD';
-    } else {
-      commitRange = `${latestVersion}..HEAD`;
-    }
-    
+    const commitRange = latestVersion === 'v0.0.0' ? 'HEAD' : `${latestVersion}..HEAD`;
     const commits = execSync(`git log --pretty=format:"- %s (%h)" ${commitRange}`, { encoding: 'utf8' });
     notes += commits;
-    
+
     if (latestVersion !== 'v0.0.0') {
       const repoUrl = `https://github.com/${github.context.repo.owner}/${github.context.repo.repo}`;
       notes += `\n\n**Full Changelog**: ${repoUrl}/compare/${latestVersion}...${newVersion}`;
@@ -30348,11 +30353,10 @@ function generateReleaseNotes(latestVersion, newVersion, inputs) {
     core.warning('Failed to generate detailed release notes');
     notes = `Release ${newVersion}`;
   }
-  
+
   return notes;
 }
 
-// Only run if this is the main module
 if (require.main === require.cache[eval('__filename')]) {
   run();
 }
@@ -30587,7 +30591,7 @@ function detectTriggerMode(inputMode, context) {
   }
 
   const eventName = context.eventName;
-  
+
   if (eventName === 'pull_request') {
     if (context.payload.pull_request?.merged) {
       return 'pr-merge';
@@ -30600,7 +30604,7 @@ function detectTriggerMode(inputMode, context) {
   } else if (eventName === 'push' && context.ref === 'refs/heads/main') {
     return 'push-main';
   }
-  
+
   return 'unknown';
 }
 
@@ -30619,16 +30623,13 @@ function detectExecutionMode(inputMode, triggerMode) {
 function parseLabels(context, inputs, triggerMode) {
   let releaseType = 'none';
   let isPrerelease = false;
-  
+
   if (triggerMode === 'pr-open' || triggerMode === 'pr-merge') {
-    // Parse PR labels
     const labels = context.payload.pull_request?.labels?.map(label => label.name) || [];
     core.info(`PR labels: ${labels.join(', ')}`);
-    
-    // Check for prerelease label
+
     isPrerelease = labels.includes(inputs.prereleaseLabel);
-    
-    // Determine release type
+
     if (labels.includes(inputs.majorLabel)) {
       releaseType = 'major';
     } else if (labels.includes(inputs.minorLabel)) {
@@ -30636,40 +30637,33 @@ function parseLabels(context, inputs, triggerMode) {
     } else if (labels.includes(inputs.patchLabel)) {
       releaseType = 'patch';
     }
-    
   } else if (triggerMode === 'manual') {
-    // For manual triggers, we expect these to be passed as inputs
-    // This would be set by a workflow_dispatch input
     releaseType = core.getInput('manual-release-type') || 'patch';
     isPrerelease = core.getBooleanInput('manual-is-prerelease') || false;
-    
   } else if (triggerMode === 'workflow-call') {
-    // For workflow_call, these would be passed as inputs
     releaseType = core.getInput('release-type') || 'patch';
     isPrerelease = core.getBooleanInput('is-prerelease') || false;
   }
-  
+
   return { releaseType, isPrerelease };
 }
 
 function parseVersion(version) {
-  // Remove 'v' prefix if present
   const cleanVersion = version.startsWith('v') ? version.slice(1) : version;
-  
-  // Check for prerelease (contains hyphen)
+
   const prereleaseIndex = cleanVersion.indexOf('-');
-  let versionPart, prereleasePart = null;
-  
+  let versionPart;
+  let prereleasePart = null;
+
   if (prereleaseIndex !== -1) {
     versionPart = cleanVersion.substring(0, prereleaseIndex);
     prereleasePart = cleanVersion.substring(prereleaseIndex + 1);
   } else {
     versionPart = cleanVersion;
   }
-  
-  // Split version parts
+
   const parts = versionPart.split('.');
-  
+
   return {
     major: parseInt(parts[0]) || 0,
     minor: parseInt(parts[1]) || 0,
@@ -30688,23 +30682,23 @@ function formatVersion(major, minor, patch, prerelease = null) {
 
 function validateInputs(inputs) {
   const errors = [];
-  
+
   if (!inputs.githubToken) {
     errors.push('github-token is required');
   }
-  
+
   if (!['npm', 'yarn', 'pnpm'].includes(inputs.packageManager)) {
     errors.push('package-manager must be one of: npm, yarn, pnpm');
   }
 
-  if (!['auto-detect', 'validate', 'release'].includes(inputs.executionMode)) {
-    errors.push('execution-mode must be one of: auto-detect, validate, release');
+  if (!['auto-detect', 'validate', 'prepare', 'release'].includes(inputs.executionMode)) {
+    errors.push('execution-mode must be one of: auto-detect, validate, prepare, release');
   }
 
   if (inputs.packageJsonMode && !['update', 'verify', 'ignore'].includes(inputs.packageJsonMode)) {
     errors.push('package-json-mode must be one of: update, verify, ignore');
   }
-  
+
   if (errors.length > 0) {
     throw new Error(`Invalid inputs: ${errors.join(', ')}`);
   }
@@ -30737,8 +30731,7 @@ const { parseVersion, formatVersion } = __nccwpck_require__(5804);
 function calculateVersion(latestVersion, releaseType, isPrerelease, inputs) {
   const current = parseVersion(latestVersion);
   let { major, minor, patch } = current;
-  
-  // Calculate new version based on release type
+
   switch (releaseType) {
     case 'major':
       major += 1;
@@ -30755,13 +30748,12 @@ function calculateVersion(latestVersion, releaseType, isPrerelease, inputs) {
     default:
       throw new Error(`Invalid release type: ${releaseType}`);
   }
-  
-  // Add prerelease suffix if needed
+
   let prerelease = null;
   if (isPrerelease) {
     prerelease = `${inputs.prereleaseSuffix}.${inputs.prereleaseNumber}`;
   }
-  
+
   return formatVersion(major, minor, patch, prerelease);
 }
 
@@ -30770,14 +30762,13 @@ function updatePackageJson(packageJsonPath, newVersion) {
     core.warning(`Package.json not found at ${packageJsonPath}, skipping version update`);
     return false;
   }
-  
+
   try {
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-    
-    // Remove 'v' prefix for package.json
+
     const versionWithoutV = newVersion.startsWith('v') ? newVersion.slice(1) : newVersion;
     packageJson.version = versionWithoutV;
-    
+
     fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
     core.info(`✅ Updated ${packageJsonPath} version to ${versionWithoutV}`);
     return true;
@@ -30821,32 +30812,30 @@ function parseExistingPrerelease(version) {
   if (parts.length < 2) {
     return null;
   }
-  
+
   const prereleasePart = parts[1];
   const match = prereleasePart.match(/^(\w+)\.(\d+)$/);
-  
+
   if (match) {
     return {
       suffix: match[1],
       number: parseInt(match[2])
     };
   }
-  
+
   return null;
 }
 
 function incrementPrerelease(version, inputs) {
   const existing = parseExistingPrerelease(version);
-  
+
   if (existing) {
-    // If it's the same suffix, increment the number
     if (existing.suffix === inputs.prereleaseSuffix) {
       const versionBase = version.split('-')[0];
       return `${versionBase}-${inputs.prereleaseSuffix}.${existing.number + 1}`;
     }
   }
-  
-  // If no existing prerelease or different suffix, start fresh
+
   return `${version}-${inputs.prereleaseSuffix}.${inputs.prereleaseNumber}`;
 }
 
@@ -30860,7 +30849,7 @@ function validateVersion(version) {
 function compareVersions(version1, version2) {
   const v1 = parseVersion(version1);
   const v2 = parseVersion(version2);
-  
+
   if (v1.major !== v2.major) {
     return v1.major - v2.major;
   }
@@ -30870,17 +30859,16 @@ function compareVersions(version1, version2) {
   if (v1.patch !== v2.patch) {
     return v1.patch - v2.patch;
   }
-  
-  // Handle prerelease comparison
+
   if (v1.prerelease && v2.prerelease) {
     return v1.prerelease.localeCompare(v2.prerelease);
   } else if (v1.prerelease) {
-    return -1; // v1 is prerelease, v2 is not
+    return -1;
   } else if (v2.prerelease) {
-    return 1; // v2 is prerelease, v1 is not
+    return 1;
   }
-  
-  return 0; // Equal
+
+  return 0;
 }
 
 module.exports = {

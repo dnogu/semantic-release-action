@@ -10,7 +10,7 @@ inputs:
   github-token:
     description: 'GitHub token for creating releases and tags'
     required: true
-  
+
   # Version labels
   major-label:
     description: 'Label name for major version bumps'
@@ -28,7 +28,7 @@ inputs:
     description: 'Label name for prerelease versions'
     required: false
     default: 'prerelease'
-  
+
   # Prerelease configuration
   prerelease-suffix:
     description: 'Suffix to use for prerelease versions (e.g., beta, alpha, rc)'
@@ -38,7 +38,7 @@ inputs:
     description: 'Starting number for prerelease versions'
     required: false
     default: '1'
-  
+
   # Build configuration
   node-version:
     description: 'Node.js version to use for building'
@@ -52,21 +52,21 @@ inputs:
     description: 'Working directory for the action'
     required: false
     default: '.'
-  
+
   # Commands
   install-command:
     description: 'Command to install dependencies'
     required: false
-    default: ''  # Will be auto-detected based on package manager
+    default: ''
   test-command:
     description: 'Command to run tests'
     required: false
-    default: ''  # Will try common test commands
+    default: ''
   build-command:
     description: 'Command to build the project'
     required: false
-    default: ''  # Will try common build commands
-  
+    default: ''
+
   # Release configuration
   create-major-release:
     description: 'Whether to create major version releases (v1.2.3, v2.1.0, etc.)'
@@ -84,7 +84,7 @@ inputs:
     description: 'Whether to auto-generate release notes from commits'
     required: false
     default: 'true'
-  
+
   # Package.json handling
   update-package-json:
     description: 'Legacy package.json toggle. When package-json-mode is not set, true maps to update and false maps to ignore'
@@ -97,7 +97,7 @@ inputs:
     description: 'Path to package.json file'
     required: false
     default: 'package.json'
-  
+
   # Git configuration
   git-user-name:
     description: 'Git user name for commits'
@@ -109,17 +109,17 @@ inputs:
     default: 'github-actions[bot]@users.noreply.github.com'
 
   commit-changes:
-    description: 'Whether to commit and push branch changes before tagging'
+    description: 'Whether to commit and push branch changes before tagging, or back to a PR branch in prepare mode'
     required: false
     default: 'true'
-  
+
   # Trigger mode
   trigger-mode:
     description: 'How the action was triggered (pr-open, pr-merge, manual, workflow-call, push-main)'
     required: false
     default: 'auto-detect'
   execution-mode:
-    description: 'Whether to validate a planned version or perform the final release (auto-detect, validate, release)'
+    description: 'Whether to validate a planned version, prepare a PR branch, or perform the final release (auto-detect, validate, prepare, release)'
     required: false
     default: 'auto-detect'
 

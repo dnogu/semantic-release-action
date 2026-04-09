@@ -87,8 +87,8 @@ function setupCoreInputs(overrides = {}, booleanOverrides = {}) {
     ...booleanOverrides
   };
 
-  core.getInput.mockImplementation((name) => (name in stringInputs ? stringInputs[name] : ''));
-  core.getBooleanInput.mockImplementation((name) => !!booleanInputs[name]);
+  core.getInput.mockImplementation(name => (name in stringInputs ? stringInputs[name] : ''));
+  core.getBooleanInput.mockImplementation(name => !!booleanInputs[name]);
 }
 
 function setupFs({
@@ -97,7 +97,7 @@ function setupFs({
   actionYaml = false,
   packageJsonContent = JSON.stringify({ scripts: { test: 'jest', build: 'ncc build src/main.js -o dist' } })
 } = {}) {
-  fs.existsSync.mockImplementation((filePath) => {
+  fs.existsSync.mockImplementation(filePath => {
     if (filePath === 'package.json') return packageJson;
     if (filePath === 'action.yml') return actionYml;
     if (filePath === 'action.yaml') return actionYaml;
@@ -110,9 +110,10 @@ function setupFs({
 function setupExecSync({
   latestTags = 'v1.2.3\nv1',
   commits = '- feat: add feature (abc123)',
-  throwOnFetch = false
+  throwOnFetch = false,
+  stagedChanges = false
 } = {}) {
-  execSync.mockImplementation((command) => {
+  execSync.mockImplementation(command => {
     if (command === 'git fetch --tags' && throwOnFetch) {
       throw new Error('fetch failed');
     }
@@ -121,6 +122,9 @@ function setupExecSync({
     }
     if (command.startsWith('git log --pretty=format:"- %s (%h)"')) {
       return commits;
+    }
+    if (command === 'git diff --cached --quiet' && stagedChanges) {
+      throw new Error('staged changes present');
     }
     if (command === 'git status --porcelain') {
       return '';
@@ -133,6 +137,9 @@ describe('main.run', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     github.getOctokit.mockReturnValue({ rest: {} });
+    github.context.payload = { pull_request: { merged: true, labels: [] } };
+    github.context.ref = 'refs/heads/main';
+    github.context.repo = { owner: 'octocat', repo: 'demo-repo' };
     setupCoreInputs();
     setupFs();
     setupExecSync();
@@ -219,6 +226,45 @@ describe('main.run', () => {
     expect(version.updatePackageJson).not.toHaveBeenCalled();
     expect(release.createRelease).not.toHaveBeenCalled();
     expect(execSync).not.toHaveBeenCalledWith('npm ci', { stdio: 'inherit' });
+    expect(core.setOutput).toHaveBeenCalledWith('released', 'false');
+    expect(core.setOutput).toHaveBeenCalledWith('version', 'v1.3.0');
+  });
+
+  test('prepares an open PR by updating package.json, running checks, and pushing the PR branch', async () => {
+    setupCoreInputs({
+      'package-json-mode': 'update',
+      'execution-mode': 'prepare'
+    });
+    setupFs({ packageJson: true, actionYml: true });
+    setupExecSync({ stagedChanges: true });
+
+    github.context.payload.pull_request = {
+      merged: false,
+      labels: [{ name: 'minor' }],
+      head: {
+        ref: 'feature/release-prep',
+        repo: { full_name: 'octocat/demo-repo' }
+      }
+    };
+
+    utils.detectTriggerMode.mockReturnValue('pr-open');
+    utils.detectExecutionMode.mockReturnValue('prepare');
+    utils.parseLabels.mockReturnValue({ releaseType: 'minor', isPrerelease: false });
+    version.calculateVersion.mockReturnValue('v1.3.0');
+
+    await run();
+
+    expect(version.updatePackageJson).toHaveBeenCalledWith('package.json', 'v1.3.0');
+    expect(version.verifyPackageJsonVersion).not.toHaveBeenCalled();
+    expect(execSync).toHaveBeenCalledWith('npm ci', { stdio: 'inherit' });
+    expect(execSync).toHaveBeenCalledWith('npm test', { stdio: 'inherit' });
+    expect(execSync).toHaveBeenCalledWith('npm run build', { stdio: 'inherit' });
+    expect(execSync).toHaveBeenCalledWith(
+      'git commit -m "build: update dist and version for v1.3.0"',
+      { stdio: 'inherit' }
+    );
+    expect(execSync).toHaveBeenCalledWith('git push origin HEAD:feature/release-prep');
+    expect(release.createRelease).not.toHaveBeenCalled();
     expect(core.setOutput).toHaveBeenCalledWith('released', 'false');
     expect(core.setOutput).toHaveBeenCalledWith('version', 'v1.3.0');
   });

@@ -8,25 +8,32 @@ jobs:
   release:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - uses: dnogu/semantic-release-action@v1
         id: release
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          
+
           # Custom labels
           major-label: 'breaking'
           minor-label: 'feature'
           patch-label: 'bugfix'
           prerelease-label: 'beta'
-          
+
           # Build configuration
           package-manager: 'npm'
           test-command: 'npm run test:ci'
           build-command: 'npm run build'
-          
+
           # Release options
           create-major-release: true
+          base_release: true
           auto-generate-notes: true
 
       - name: Notify on success
@@ -34,7 +41,7 @@ jobs:
         run: |
           echo "🎉 Released ${{ steps.release.outputs.version }}"
           echo "📝 Release URL: ${{ steps.release.outputs.release-url }}"
-          
+
       - name: Deploy to production
         if: steps.release.outputs.released == 'true' && steps.release.outputs.is-prerelease == 'false'
         run: |

@@ -67,6 +67,7 @@ describe('utils', () => {
   describe('detectExecutionMode', () => {
     test('returns explicit mode when auto-detect is not used', () => {
       expect(detectExecutionMode('release', 'pr-open')).toBe('release');
+      expect(detectExecutionMode('prepare', 'pr-open')).toBe('prepare');
     });
 
     test('uses validate mode for open PRs', () => {
@@ -101,6 +102,21 @@ describe('utils', () => {
         isPrerelease: true
       });
       expect(core.info).toHaveBeenCalledWith('PR labels: patch, minor, major, prerelease');
+    });
+
+    test('parses labels for open PR preparation flows', () => {
+      const context = {
+        payload: {
+          pull_request: {
+            labels: [{ name: 'patch' }]
+          }
+        }
+      };
+
+      expect(parseLabels(context, labelInputs, 'pr-open')).toEqual({
+        releaseType: 'patch',
+        isPrerelease: false
+      });
     });
 
     test('returns none when PR has no release labels', () => {
@@ -215,7 +231,7 @@ describe('utils', () => {
         validateInputs({
           githubToken: 'token',
           packageManager: 'npm',
-          executionMode: 'auto-detect',
+          executionMode: 'prepare',
           packageJsonMode: 'update'
         })
       ).not.toThrow();
@@ -256,7 +272,7 @@ describe('utils', () => {
           packageJsonMode: 'update'
         })
       ).toThrow(
-        'Invalid inputs: execution-mode must be one of: auto-detect, validate, release'
+        'Invalid inputs: execution-mode must be one of: auto-detect, validate, prepare, release'
       );
     });
 
@@ -282,7 +298,7 @@ describe('utils', () => {
           packageJsonMode: 'sync'
         })
       ).toThrow(
-        'Invalid inputs: github-token is required, package-manager must be one of: npm, yarn, pnpm, execution-mode must be one of: auto-detect, validate, release, package-json-mode must be one of: update, verify, ignore'
+        'Invalid inputs: github-token is required, package-manager must be one of: npm, yarn, pnpm, execution-mode must be one of: auto-detect, validate, prepare, release, package-json-mode must be one of: update, verify, ignore'
       );
     });
   });
