@@ -70,7 +70,9 @@ async function run() {
     const newVersion = calculateVersion(latestVersion, releaseType, isPrerelease, inputs);
     core.info(`🆕 New version: ${newVersion}`);
 
-    handlePackageJson(inputs, newVersion);
+    if (executionMode !== 'release-only') {
+      handlePackageJson(inputs, newVersion);
+    }
 
     setReleaseOutputs({
       released: false,
@@ -89,6 +91,11 @@ async function run() {
     if (executionMode === 'prepare') {
       await preparePullRequestRelease(context, inputs, newVersion);
       core.info('✅ Pull request release preparation completed');
+      return;
+    }
+
+    if (executionMode === 'release-only') {
+      await createReleaseOnly(octokit, context, inputs, latestVersion, newVersion, releaseType, isPrerelease);
       return;
     }
 
@@ -168,6 +175,19 @@ async function createFinalRelease(octokit, context, inputs, latestVersion, newVe
 
   await createAndPushTag(newVersion, { pushBranch: shouldPushBranch });
 
+  await publishRelease(octokit, context, inputs, latestVersion, newVersion, releaseType, isPrerelease);
+}
+
+async function createReleaseOnly(octokit, context, inputs, latestVersion, newVersion, releaseType, isPrerelease) {
+  core.info('🏷️ Release-only mode enabled. Skipping package.json handling, install, test, build, and branch commits.');
+
+  configureGit(inputs);
+
+  await createAndPushTag(newVersion, { pushBranch: false });
+  await publishRelease(octokit, context, inputs, latestVersion, newVersion, releaseType, isPrerelease);
+}
+
+async function publishRelease(octokit, context, inputs, latestVersion, newVersion, releaseType, isPrerelease) {
   const releaseNotes = generateReleaseNotes(latestVersion, newVersion, inputs);
 
   const release = await createRelease(octokit, context, {

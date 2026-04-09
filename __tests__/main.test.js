@@ -347,6 +347,61 @@ describe('main.run', () => {
     expect(execSync).toHaveBeenCalledWith('git push origin "v1.2.4"');
   });
 
+  test('release-only creates the tag and GitHub release without package.json handling or local checks', async () => {
+    setupCoreInputs(
+      {
+        'package-json-mode': 'verify',
+        'execution-mode': 'release-only'
+      },
+      { 'commit-changes': true }
+    );
+    setupFs({ packageJson: true, actionYml: true });
+
+    utils.detectTriggerMode.mockReturnValue('pr-merge');
+    utils.detectExecutionMode.mockReturnValue('release-only');
+    utils.parseLabels.mockReturnValue({ releaseType: 'patch', isPrerelease: false });
+    version.calculateVersion.mockReturnValue('v1.2.4');
+    release.createRelease.mockResolvedValue({
+      id: 103,
+      html_url: 'https://example.com/releases/v1.2.4'
+    });
+    release.createMajorRelease.mockResolvedValue({ tag: 'v1', version: 'v1.2.4' });
+
+    await run();
+
+    expect(version.verifyPackageJsonVersion).not.toHaveBeenCalled();
+    expect(version.updatePackageJson).not.toHaveBeenCalled();
+    expect(execSync).not.toHaveBeenCalledWith('npm ci', { stdio: 'inherit' });
+    expect(execSync).not.toHaveBeenCalledWith('npm test', { stdio: 'inherit' });
+    expect(execSync).not.toHaveBeenCalledWith('npm run build', { stdio: 'inherit' });
+    expect(execSync).toHaveBeenCalledWith(
+      'git config --local user.email "github-actions[bot]@users.noreply.github.com"'
+    );
+    expect(execSync).toHaveBeenCalledWith(
+      'git config --local user.name "github-actions[bot]"'
+    );
+    expect(execSync).toHaveBeenCalledWith('git push origin "v1.2.4"');
+    expect(execSync.mock.calls.filter(([command]) => command.startsWith('git commit '))).toHaveLength(0);
+    expect(execSync.mock.calls.filter(([command]) => command === 'git push origin HEAD')).toHaveLength(0);
+    expect(release.createRelease).toHaveBeenCalledWith(
+      { rest: {} },
+      github.context,
+      expect.objectContaining({
+        tagName: 'v1.2.4',
+        prerelease: false
+      })
+    );
+    expect(release.createMajorRelease).toHaveBeenCalledWith(
+      { rest: {} },
+      github.context,
+      expect.objectContaining({
+        majorVersion: 'v1',
+        fullVersion: 'v1.2.4'
+      })
+    );
+    expect(core.setOutput).toHaveBeenCalledWith('released', 'true');
+  });
+
   test('does not create major release for prereleases', async () => {
     utils.detectTriggerMode.mockReturnValue('pr-merge');
     utils.parseLabels.mockReturnValue({ releaseType: 'patch', isPrerelease: true });
