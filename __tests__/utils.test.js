@@ -67,6 +67,7 @@ describe('utils', () => {
   describe('detectExecutionMode', () => {
     test('returns explicit mode when auto-detect is not used', () => {
       expect(detectExecutionMode('release', 'pr-open')).toBe('release');
+      expect(detectExecutionMode('release-only', 'pr-merge')).toBe('release-only');
       expect(detectExecutionMode('prepare', 'pr-open')).toBe('prepare');
     });
 
@@ -257,7 +258,7 @@ describe('utils', () => {
         validateInputs({
           githubToken: 'token',
           packageManager: 'npm',
-          executionMode: 'prepare',
+          executionMode: 'release-only',
           packageJsonMode: 'update'
         })
       ).not.toThrow();
@@ -298,7 +299,7 @@ describe('utils', () => {
           packageJsonMode: 'update'
         })
       ).toThrow(
-        'Invalid inputs: execution-mode must be one of: auto-detect, validate, prepare, release'
+        'Invalid inputs: execution-mode must be one of: auto-detect, validate, prepare, release, release-only'
       );
     });
 
@@ -324,7 +325,7 @@ describe('utils', () => {
           packageJsonMode: 'sync'
         })
       ).toThrow(
-        'Invalid inputs: github-token is required, package-manager must be one of: npm, yarn, pnpm, execution-mode must be one of: auto-detect, validate, prepare, release, package-json-mode must be one of: update, verify, ignore'
+        'Invalid inputs: github-token is required, package-manager must be one of: npm, yarn, pnpm, execution-mode must be one of: auto-detect, validate, prepare, release, release-only, package-json-mode must be one of: update, verify, ignore'
       );
     });
   });

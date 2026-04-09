@@ -119,7 +119,7 @@ inputs:
     required: false
     default: 'auto-detect'
   execution-mode:
-    description: 'Whether to validate a planned version, prepare a PR branch, or perform the final release (auto-detect defaults to prepare for same-repo PRs, validate for fork PRs, and release after merge)'
+    description: 'Whether to validate a planned version, prepare a PR branch, perform the full release flow, or create only the Git tag and GitHub release (auto-detect defaults to prepare for same-repo PRs, validate for fork PRs, and release after merge)'
     required: false
     default: 'auto-detect'
 

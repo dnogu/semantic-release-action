@@ -157,6 +157,35 @@ jobs:
 
 With this setup, the merged `package.json` version must already match the tag that gets created by the release job.
 
+### Release-Only Workflow
+
+If you want the merged PR flow to create only the semantic version tag, the GitHub release, and the synced major version tag when `base_release: true`, use `release-only`. This mode skips `package.json` handling, install, test, build, and branch commit/push steps.
+
+```yaml
+name: Release
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dnogu/semantic-release-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          execution-mode: release-only
+          base_release: true
+```
+
 ### PR Preparation Workflow
 
 For same-repository pull requests, `execution-mode: auto-detect` now defaults to `prepare`. This mode updates files, runs install/test/build, commits the results, and pushes them back to the PR branch without creating a tag or release. Before pushing, the action fetches and rebases onto the latest PR branch tip so it is less likely to fail when another update lands mid-run. Fork PRs automatically fall back to `validate` because the action cannot push back to fork branches.
@@ -234,7 +263,7 @@ This workflow is intended for same-repository PR branches. Fork PRs cannot be pu
 
     # Release execution
     commit-changes: true           # also controls branch commits in prepare mode
-    execution-mode: 'auto-detect'  # prepare for same-repo PRs, validate for fork PRs, release after merge
+    execution-mode: 'auto-detect'  # prepare for same-repo PRs, validate for fork PRs, release after merge; or set release-only explicitly
 ```
 
 ## 📤 Outputs
@@ -339,7 +368,17 @@ jobs:
     commit-changes: false
 ```
 
-### Scenario 6: PR Preparation
+### Scenario 6: Release-Only Merge Flow
+
+```yaml
+- uses: dnogu/semantic-release-action@v1
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    execution-mode: release-only
+    base_release: true
+```
+
+### Scenario 7: PR Preparation
 
 ```yaml
 - uses: dnogu/semantic-release-action@v1

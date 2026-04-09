@@ -116,8 +116,8 @@ function validateInputs(inputs) {
     errors.push('package-manager must be one of: npm, yarn, pnpm');
   }
 
-  if (!['auto-detect', 'validate', 'prepare', 'release'].includes(inputs.executionMode)) {
-    errors.push('execution-mode must be one of: auto-detect, validate, prepare, release');
+  if (!['auto-detect', 'validate', 'prepare', 'release', 'release-only'].includes(inputs.executionMode)) {
+    errors.push('execution-mode must be one of: auto-detect, validate, prepare, release, release-only');
   }
 
   if (inputs.packageJsonMode && !['update', 'verify', 'ignore'].includes(inputs.packageJsonMode)) {
