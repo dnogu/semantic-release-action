@@ -29,12 +29,14 @@ jest.mock('fs', () => ({
 
 jest.mock('../src/utils', () => ({
   detectTriggerMode: jest.fn(),
+  detectExecutionMode: jest.fn(),
   parseLabels: jest.fn()
 }));
 
 jest.mock('../src/version', () => ({
   calculateVersion: jest.fn(),
-  updatePackageJson: jest.fn()
+  updatePackageJson: jest.fn(),
+  verifyPackageJsonVersion: jest.fn()
 }));
 
 jest.mock('../src/release', () => ({
@@ -66,10 +68,12 @@ function setupCoreInputs(overrides = {}, booleanOverrides = {}) {
     'install-command': 'npm ci',
     'test-command': 'npm test',
     'build-command': 'npm run build',
+    'package-json-mode': 'update',
     'package-json-path': 'package.json',
     'git-user-name': 'github-actions[bot]',
     'git-user-email': 'github-actions[bot]@users.noreply.github.com',
     'trigger-mode': 'auto-detect',
+    'execution-mode': 'auto-detect',
     ...overrides
   };
 
@@ -79,6 +83,7 @@ function setupCoreInputs(overrides = {}, booleanOverrides = {}) {
     'copy-assets': true,
     'auto-generate-notes': true,
     'update-package-json': true,
+    'commit-changes': true,
     ...booleanOverrides
   };
 
@@ -131,6 +136,7 @@ describe('main.run', () => {
     setupCoreInputs();
     setupFs();
     setupExecSync();
+    utils.detectExecutionMode.mockReturnValue('release');
   });
 
   test('skips release when no release labels are resolved', async () => {
@@ -197,6 +203,49 @@ describe('main.run', () => {
     );
 
     chdirSpy.mockRestore();
+  });
+
+  test('validates planned version for open PRs without creating a release', async () => {
+    setupCoreInputs({ 'package-json-mode': 'verify' });
+
+    utils.detectTriggerMode.mockReturnValue('pr-open');
+    utils.detectExecutionMode.mockReturnValue('validate');
+    utils.parseLabels.mockReturnValue({ releaseType: 'minor', isPrerelease: false });
+    version.calculateVersion.mockReturnValue('v1.3.0');
+
+    await run();
+
+    expect(version.verifyPackageJsonVersion).toHaveBeenCalledWith('package.json', 'v1.3.0');
+    expect(version.updatePackageJson).not.toHaveBeenCalled();
+    expect(release.createRelease).not.toHaveBeenCalled();
+    expect(execSync).not.toHaveBeenCalledWith('npm ci', { stdio: 'inherit' });
+    expect(core.setOutput).toHaveBeenCalledWith('released', 'false');
+    expect(core.setOutput).toHaveBeenCalledWith('version', 'v1.3.0');
+  });
+
+  test('can verify package.json and create a tag without pushing the branch', async () => {
+    setupCoreInputs(
+      { 'package-json-mode': 'verify' },
+      { 'commit-changes': false }
+    );
+    setupFs({ packageJson: true, actionYml: true });
+
+    utils.detectTriggerMode.mockReturnValue('pr-merge');
+    utils.detectExecutionMode.mockReturnValue('release');
+    utils.parseLabels.mockReturnValue({ releaseType: 'patch', isPrerelease: false });
+    version.calculateVersion.mockReturnValue('v1.2.4');
+    release.createRelease.mockResolvedValue({
+      id: 102,
+      html_url: 'https://example.com/releases/v1.2.4'
+    });
+    release.createMajorRelease.mockResolvedValue(null);
+
+    await run();
+
+    expect(version.verifyPackageJsonVersion).toHaveBeenCalledWith('package.json', 'v1.2.4');
+    expect(version.updatePackageJson).not.toHaveBeenCalled();
+    expect(execSync).not.toHaveBeenCalledWith('git push origin HEAD');
+    expect(execSync).toHaveBeenCalledWith('git push origin "v1.2.4"');
   });
 
   test('does not create major release for prereleases', async () => {

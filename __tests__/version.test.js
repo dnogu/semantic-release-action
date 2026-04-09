@@ -15,6 +15,7 @@ const fs = require('fs');
 const {
   calculateVersion,
   updatePackageJson,
+  verifyPackageJsonVersion,
   parseExistingPrerelease,
   incrementPrerelease,
   validateVersion,
@@ -56,7 +57,7 @@ describe('version', () => {
     test('skips update when file does not exist', () => {
       fs.existsSync.mockReturnValue(false);
 
-      updatePackageJson('package.json', 'v1.2.3');
+      expect(updatePackageJson('package.json', 'v1.2.3')).toBe(false);
 
       expect(core.warning).toHaveBeenCalledWith(
         'Package.json not found at package.json, skipping version update'
@@ -68,7 +69,7 @@ describe('version', () => {
       fs.existsSync.mockReturnValue(true);
       fs.readFileSync.mockReturnValue(JSON.stringify({ name: 'demo', version: '0.1.0' }));
 
-      updatePackageJson('package.json', 'v1.2.3');
+      expect(updatePackageJson('package.json', 'v1.2.3')).toBe(true);
 
       expect(fs.writeFileSync).toHaveBeenCalledWith(
         'package.json',
@@ -81,12 +82,45 @@ describe('version', () => {
       fs.existsSync.mockReturnValue(true);
       fs.readFileSync.mockReturnValue('{');
 
-      updatePackageJson('package.json', 'v1.2.3');
+      expect(updatePackageJson('package.json', 'v1.2.3')).toBe(false);
 
       expect(core.warning).toHaveBeenCalledWith(
         expect.stringContaining('Failed to update package.json:')
       );
       expect(fs.writeFileSync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('verifyPackageJsonVersion', () => {
+    test('skips verification when file does not exist', () => {
+      fs.existsSync.mockReturnValue(false);
+
+      expect(verifyPackageJsonVersion('package.json', 'v1.2.3')).toBe(false);
+      expect(core.warning).toHaveBeenCalledWith(
+        'Package.json not found at package.json, skipping version verification'
+      );
+    });
+
+    test('passes when package.json version matches expected tag', () => {
+      fs.existsSync.mockReturnValue(true);
+      fs.readFileSync.mockReturnValue(JSON.stringify({ version: '1.2.3' }));
+
+      expect(verifyPackageJsonVersion('package.json', 'v1.2.3')).toBe(true);
+      expect(core.info).toHaveBeenCalledWith(
+        '✅ Verified package.json version matches 1.2.3'
+      );
+    });
+
+    test('throws when package.json version does not match expected tag', () => {
+      fs.existsSync.mockReturnValue(true);
+      fs.readFileSync.mockReturnValue(JSON.stringify({ version: '1.2.4' }));
+
+      expect(() => verifyPackageJsonVersion('package.json', 'v1.2.3')).toThrow(
+        'Expected package.json version to be 1.2.3, but found 1.2.4'
+      );
+      expect(core.error).toHaveBeenCalledWith(
+        expect.stringContaining('Package.json version verification failed:')
+      );
     });
   });
 

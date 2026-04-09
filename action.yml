@@ -87,9 +87,12 @@ inputs:
   
   # Package.json handling
   update-package-json:
-    description: 'Whether to update package.json version'
+    description: 'Legacy package.json toggle. When package-json-mode is not set, true maps to update and false maps to ignore'
     required: false
     default: 'true'
+  package-json-mode:
+    description: 'How to handle package.json: update, verify, or ignore. Leave empty to fall back to update-package-json'
+    required: false
   package-json-path:
     description: 'Path to package.json file'
     required: false
@@ -104,10 +107,19 @@ inputs:
     description: 'Git user email for commits'
     required: false
     default: 'github-actions[bot]@users.noreply.github.com'
+
+  commit-changes:
+    description: 'Whether to commit and push branch changes before tagging'
+    required: false
+    default: 'true'
   
   # Trigger mode
   trigger-mode:
-    description: 'How the action was triggered (pr-merge, manual, workflow-call)'
+    description: 'How the action was triggered (pr-open, pr-merge, manual, workflow-call, push-main)'
+    required: false
+    default: 'auto-detect'
+  execution-mode:
+    description: 'Whether to validate a planned version or perform the final release (auto-detect, validate, release)'
     required: false
     default: 'auto-detect'
 

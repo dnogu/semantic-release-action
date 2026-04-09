@@ -8,8 +8,11 @@ function detectTriggerMode(inputMode, context) {
 
   const eventName = context.eventName;
   
-  if (eventName === 'pull_request' && context.payload.pull_request?.merged) {
-    return 'pr-merge';
+  if (eventName === 'pull_request') {
+    if (context.payload.pull_request?.merged) {
+      return 'pr-merge';
+    }
+    return 'pr-open';
   } else if (eventName === 'workflow_dispatch') {
     return 'manual';
   } else if (eventName === 'workflow_call') {
@@ -21,11 +24,23 @@ function detectTriggerMode(inputMode, context) {
   return 'unknown';
 }
 
+function detectExecutionMode(inputMode, triggerMode) {
+  if (inputMode !== 'auto-detect') {
+    return inputMode;
+  }
+
+  if (triggerMode === 'pr-open') {
+    return 'validate';
+  }
+
+  return 'release';
+}
+
 function parseLabels(context, inputs, triggerMode) {
   let releaseType = 'none';
   let isPrerelease = false;
   
-  if (triggerMode === 'pr-merge') {
+  if (triggerMode === 'pr-open' || triggerMode === 'pr-merge') {
     // Parse PR labels
     const labels = context.payload.pull_request?.labels?.map(label => label.name) || [];
     core.info(`PR labels: ${labels.join(', ')}`);
@@ -101,6 +116,14 @@ function validateInputs(inputs) {
   if (!['npm', 'yarn', 'pnpm'].includes(inputs.packageManager)) {
     errors.push('package-manager must be one of: npm, yarn, pnpm');
   }
+
+  if (!['auto-detect', 'validate', 'release'].includes(inputs.executionMode)) {
+    errors.push('execution-mode must be one of: auto-detect, validate, release');
+  }
+
+  if (inputs.packageJsonMode && !['update', 'verify', 'ignore'].includes(inputs.packageJsonMode)) {
+    errors.push('package-json-mode must be one of: update, verify, ignore');
+  }
   
   if (errors.length > 0) {
     throw new Error(`Invalid inputs: ${errors.join(', ')}`);
@@ -113,6 +136,7 @@ function sleep(ms) {
 
 module.exports = {
   detectTriggerMode,
+  detectExecutionMode,
   parseLabels,
   parseVersion,
   formatVersion,
