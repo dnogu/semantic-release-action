@@ -24,13 +24,22 @@ function detectTriggerMode(inputMode, context) {
   return 'unknown';
 }
 
-function detectExecutionMode(inputMode, triggerMode) {
+function detectExecutionMode(inputMode, triggerMode, context = github.context) {
   if (inputMode !== 'auto-detect') {
     return inputMode;
   }
 
   if (triggerMode === 'pr-open') {
-    return 'validate';
+    const headRepo = context.payload?.pull_request?.head?.repo?.full_name;
+    const baseRepo = context.repo?.owner && context.repo?.repo
+      ? `${context.repo.owner}/${context.repo.repo}`
+      : null;
+
+    if (headRepo && baseRepo && headRepo !== baseRepo) {
+      return 'validate';
+    }
+
+    return 'prepare';
   }
 
   return 'release';

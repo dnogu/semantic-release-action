@@ -70,8 +70,34 @@ describe('utils', () => {
       expect(detectExecutionMode('prepare', 'pr-open')).toBe('prepare');
     });
 
-    test('uses validate mode for open PRs', () => {
-      expect(detectExecutionMode('auto-detect', 'pr-open')).toBe('validate');
+    test('uses prepare mode for same-repository open PRs', () => {
+      const context = {
+        payload: {
+          pull_request: {
+            head: {
+              repo: { full_name: 'octocat/demo-repo' }
+            }
+          }
+        },
+        repo: { owner: 'octocat', repo: 'demo-repo' }
+      };
+
+      expect(detectExecutionMode('auto-detect', 'pr-open', context)).toBe('prepare');
+    });
+
+    test('uses validate mode for fork pull requests', () => {
+      const context = {
+        payload: {
+          pull_request: {
+            head: {
+              repo: { full_name: 'someone-else/demo-repo' }
+            }
+          }
+        },
+        repo: { owner: 'octocat', repo: 'demo-repo' }
+      };
+
+      expect(detectExecutionMode('auto-detect', 'pr-open', context)).toBe('validate');
     });
 
     test('uses release mode for merged PRs and other triggers', () => {

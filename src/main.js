@@ -50,7 +50,7 @@ async function run() {
     const triggerMode = detectTriggerMode(inputs.triggerMode, context);
     core.info(`🔍 Detected trigger mode: ${triggerMode}`);
 
-    const executionMode = detectExecutionMode(inputs.executionMode, triggerMode);
+    const executionMode = detectExecutionMode(inputs.executionMode, triggerMode, context);
     core.info(`🧭 Execution mode: ${executionMode}`);
 
     const { releaseType, isPrerelease } = parseLabels(context, inputs, triggerMode);

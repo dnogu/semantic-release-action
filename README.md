@@ -100,6 +100,8 @@ This avoids branch-protection conflicts and prevents accidental double bumps. Th
 
 ### PR Validation Workflow
 
+If you want a read-only PR check that calculates the planned version without changing the branch, use explicit `validate` mode.
+
 ```yaml
 name: Version Check
 on:
@@ -155,9 +157,9 @@ jobs:
 
 With this setup, the merged `package.json` version must already match the tag that gets created by the release job.
 
-### Optional PR Preparation Workflow
+### PR Preparation Workflow
 
-If you want the branch to be updated during the PR itself, you can opt into `prepare` mode. This mode updates files, runs install/test/build, commits the results, and pushes them back to the PR branch without creating a tag or release.
+For same-repository pull requests, `execution-mode: auto-detect` now defaults to `prepare`. This mode updates files, runs install/test/build, commits the results, and pushes them back to the PR branch without creating a tag or release. Fork PRs automatically fall back to `validate` because the action cannot push back to fork branches.
 
 ```yaml
 name: Prepare Release PR
@@ -232,7 +234,7 @@ This workflow is intended for same-repository PR branches. Fork PRs cannot be pu
 
     # Release execution
     commit-changes: true           # also controls branch commits in prepare mode
-    execution-mode: 'auto-detect'  # auto-detect, validate, prepare, release
+    execution-mode: 'auto-detect'  # prepare for same-repo PRs, validate for fork PRs, release after merge
 ```
 
 ## 📤 Outputs
