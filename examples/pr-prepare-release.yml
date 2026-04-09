@@ -1,20 +1,23 @@
-name: Release
+name: Prepare Release PR
 on:
   pull_request:
-    types: [closed]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     branches: [main]
 
 jobs:
-  release:
-    if: github.event.pull_request.merged == true
+  prepare:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - uses: dnogu/semantic-release-action@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          execution-mode: prepare
+          package-json-mode: update
+          commit-changes: true
