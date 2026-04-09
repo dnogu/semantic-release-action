@@ -6,6 +6,7 @@ A powerful GitHub Action that automates semantic versioning and release creation
 
 - 🏷️ **Label-based releases** - Control versions with simple PR labels
 - 📦 **Semantic versioning** - Automatic major/minor/patch version calculation
+- 🔒 **Protected-branch friendly** - Validate `package.json` in PRs and release on merge without pushing back to `main`
 - 🚀 **Prerelease support** - Create beta/alpha/rc releases
 - 🔄 **Major version tracking** - Automatic v1, v2, etc. release management
 - 📝 **Auto-generated notes** - Release notes from commit history
@@ -86,6 +87,73 @@ When you merge a PR with labels, the action automatically:
 - Generates release notes from commits
 - **With `base_release: true`**: Updates major version tags (v1, v2, etc.) to the latest release without creating a second major-tag release entry
 
+## 🔒 Protected Branches
+
+If `main` is protected, the safest pattern is:
+
+1. Validate the expected version on every PR.
+2. Require `package.json` to already contain that version before merge.
+3. Create the tag and GitHub release after merge without pushing a new commit back to `main`.
+
+This avoids branch-protection conflicts and prevents accidental double bumps. The version is always recalculated from the latest real tag plus the current PR labels, so changing labels ten times on the same PR does not increment ten times.
+
+### PR Validation Workflow
+
+```yaml
+name: Version Check
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    branches: [main]
+
+jobs:
+  version-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dnogu/semantic-release-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          execution-mode: validate
+          package-json-mode: verify
+```
+
+### Merge Release Workflow
+
+```yaml
+name: Release
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dnogu/semantic-release-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          execution-mode: release
+          package-json-mode: verify
+          commit-changes: false
+          base_release: true
+```
+
+With this setup, the merged `package.json` version must already match the tag that gets created by the release job.
+
 ## 📚 Full Configuration
 
 ```yaml
@@ -121,12 +189,17 @@ When you merge a PR with labels, the action automatically:
     auto-generate-notes: true
     
     # Package.json handling
-    update-package-json: true
+    update-package-json: true      # legacy toggle
+    package-json-mode: 'update'    # update, verify, ignore
     package-json-path: 'package.json'
     
     # Git configuration
     git-user-name: 'github-actions[bot]'
     git-user-email: 'github-actions[bot]@users.noreply.github.com'
+
+    # Release execution
+    commit-changes: true           # set false for protected branches
+    execution-mode: 'auto-detect'  # auto-detect, validate, release
 ```
 
 ## 📤 Outputs
@@ -179,7 +252,7 @@ The action provides useful outputs for downstream jobs:
 - uses: dnogu/semantic-release-action@v1
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
-    update-package-json: false
+    package-json-mode: ignore
     test-command: 'python -m pytest'
     build-command: 'python setup.py build'
 ```
@@ -218,6 +291,17 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           release-type: ${{ github.event.inputs.release-type }}
           is-prerelease: ${{ github.event.inputs.is-prerelease }}
+```
+
+### Scenario 5: Protected Branches
+
+```yaml
+- uses: dnogu/semantic-release-action@v1
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    execution-mode: release
+    package-json-mode: verify
+    commit-changes: false
 ```
 
 ## 🔧 Advanced Features

@@ -29929,10 +29929,9 @@ const core = __nccwpck_require__(7484);
 const github = __nccwpck_require__(3228);
 const { execSync } = __nccwpck_require__(5317);
 const fs = __nccwpck_require__(9896);
-const path = __nccwpck_require__(6928);
 
-const { detectTriggerMode, parseLabels } = __nccwpck_require__(5804);
-const { calculateVersion, updatePackageJson } = __nccwpck_require__(321);
+const { detectTriggerMode, detectExecutionMode, parseLabels } = __nccwpck_require__(5804);
+const { calculateVersion, updatePackageJson, verifyPackageJsonVersion } = __nccwpck_require__(321);
 const { createRelease, createMajorRelease } = __nccwpck_require__(5712);
 
 async function run() {
@@ -29957,10 +29956,13 @@ async function run() {
       copyAssets: core.getBooleanInput('copy-assets'),
       autoGenerateNotes: core.getBooleanInput('auto-generate-notes'),
       updatePackageJson: core.getBooleanInput('update-package-json'),
+      packageJsonMode: core.getInput('package-json-mode'),
       packageJsonPath: core.getInput('package-json-path'),
       gitUserName: core.getInput('git-user-name'),
       gitUserEmail: core.getInput('git-user-email'),
-      triggerMode: core.getInput('trigger-mode')
+      triggerMode: core.getInput('trigger-mode'),
+      executionMode: core.getInput('execution-mode'),
+      commitChanges: core.getBooleanInput('commit-changes')
     };
 
     // Initialize GitHub client
@@ -29978,6 +29980,9 @@ async function run() {
     // Detect trigger mode
     const triggerMode = detectTriggerMode(inputs.triggerMode, context);
     core.info(`🔍 Detected trigger mode: ${triggerMode}`);
+
+    const executionMode = detectExecutionMode(inputs.executionMode, triggerMode);
+    core.info(`🧭 Execution mode: ${executionMode}`);
 
     // Parse labels to determine release type
     const { releaseType, isPrerelease } = parseLabels(context, inputs, triggerMode);
@@ -29999,9 +30004,20 @@ async function run() {
     const newVersion = calculateVersion(latestVersion, releaseType, isPrerelease, inputs);
     core.info(`🆕 New version: ${newVersion}`);
 
-    // Update package.json if requested
-    if (inputs.updatePackageJson) {
-      updatePackageJson(inputs.packageJsonPath, newVersion);
+    handlePackageJson(inputs, newVersion);
+
+    setReleaseOutputs({
+      released: false,
+      version: newVersion,
+      previousVersion: latestVersion,
+      releaseType,
+      isPrerelease,
+      tagName: newVersion
+    });
+
+    if (executionMode === 'validate') {
+      core.info('🧪 Validation mode enabled. Skipping build, tag, and release creation.');
+      return;
     }
 
     // Setup Node.js and install dependencies
@@ -30017,10 +30033,15 @@ async function run() {
     configureGit(inputs);
 
     // Commit changes if any
-    await commitChanges(newVersion, inputs);
+    let shouldPushBranch = false;
+    if (inputs.commitChanges) {
+      shouldPushBranch = await commitChanges(newVersion, inputs);
+    } else {
+      core.info('📝 Skipping commit step because commit-changes is disabled');
+    }
 
     // Create and push tag
-    await createAndPushTag(newVersion);
+    await createAndPushTag(newVersion, { pushBranch: shouldPushBranch });
 
     // Generate release notes
     const releaseNotes = generateReleaseNotes(latestVersion, newVersion, inputs);
@@ -30036,14 +30057,16 @@ async function run() {
     core.info(`✅ Created release: ${release.html_url}`);
 
     // Set outputs
-    core.setOutput('released', 'true');
-    core.setOutput('version', newVersion);
-    core.setOutput('previous-version', latestVersion);
-    core.setOutput('release-type', releaseType);
-    core.setOutput('is-prerelease', isPrerelease.toString());
+    setReleaseOutputs({
+      released: true,
+      version: newVersion,
+      previousVersion: latestVersion,
+      releaseType,
+      isPrerelease,
+      tagName: newVersion
+    });
     core.setOutput('release-url', release.html_url);
     core.setOutput('release-id', release.id.toString());
-    core.setOutput('tag-name', newVersion);
 
     // Sync major version tag if requested and not a prerelease
     if (inputs.baseRelease && !isPrerelease) {
@@ -30067,6 +30090,37 @@ async function run() {
     core.error(`❌ Action failed: ${error.message}`);
     core.setFailed(error.message);
   }
+}
+
+function handlePackageJson(inputs, newVersion) {
+  const packageJsonMode = resolvePackageJsonMode(inputs);
+
+  switch (packageJsonMode) {
+    case 'update':
+      updatePackageJson(inputs.packageJsonPath, newVersion);
+      break;
+    case 'verify':
+      verifyPackageJsonVersion(inputs.packageJsonPath, newVersion);
+      break;
+    case 'ignore':
+      core.info('📦 Skipping package.json handling');
+      break;
+    default:
+      throw new Error(`Invalid package-json-mode: ${packageJsonMode}`);
+  }
+}
+
+function resolvePackageJsonMode(inputs) {
+  return inputs.packageJsonMode || (inputs.updatePackageJson ? 'update' : 'ignore');
+}
+
+function setReleaseOutputs({ released, version, previousVersion, releaseType, isPrerelease, tagName }) {
+  core.setOutput('released', released.toString());
+  core.setOutput('version', version);
+  core.setOutput('previous-version', previousVersion);
+  core.setOutput('release-type', releaseType);
+  core.setOutput('is-prerelease', isPrerelease.toString());
+  core.setOutput('tag-name', tagName);
 }
 
 function getLatestVersion() {
@@ -30181,30 +30235,62 @@ async function commitChanges(newVersion, inputs) {
       core.info('📝 Detected GitHub Action project - ensuring dist/ is committed...');
       
       // Add built files that are essential for GitHub Actions
-      execSync('git add dist/ || true', { stdio: 'inherit' });
-      execSync('git add coverage/ || true', { stdio: 'inherit' });
-      execSync('git add package.json || true', { stdio: 'inherit' });
+      tryGitAdd('dist/');
+      tryGitAdd('coverage/');
+
+      if (resolvePackageJsonMode(inputs) === 'update') {
+        tryGitAdd(inputs.packageJsonPath);
+      }
       
       // For GitHub Actions, always commit to ensure dist/ is included in releases
+      if (!hasStagedChanges()) {
+        core.info('No staged changes to commit');
+        return false;
+      }
+
       core.info('📝 Committing built files and version changes...');
-      execSync(`git commit -m "build: update dist and version for ${newVersion}" || true`);
+      execSync(`git commit -m "build: update dist and version for ${newVersion}"`, {
+        stdio: 'inherit'
+      });
+      return true;
     } else {
       // Non-GitHub Action project - use original logic
       const status = execSync('git status --porcelain', { encoding: 'utf8' });
       if (status.trim()) {
         core.info('📝 Committing version changes...');
         execSync('git add .');
-        execSync(`git commit -m "chore: bump version to ${newVersion}"`);
+        execSync(`git commit -m "chore: bump version to ${newVersion}"`, { stdio: 'inherit' });
+        return true;
       } else {
         core.info('No changes to commit');
+        return false;
       }
     }
   } catch (error) {
     core.info('No changes to commit or commit failed');
+    return false;
   }
 }
 
-async function createAndPushTag(newVersion) {
+function hasStagedChanges() {
+  try {
+    execSync('git diff --cached --quiet');
+    return false;
+  } catch (error) {
+    return true;
+  }
+}
+
+function tryGitAdd(pathspec) {
+  try {
+    execSync(`git add "${pathspec}"`, { stdio: 'inherit' });
+  } catch (error) {
+    core.info(`Skipping git add for ${pathspec}: ${error.message}`);
+  }
+}
+
+async function createAndPushTag(newVersion, options = {}) {
+  const { pushBranch = false } = options;
   core.info(`🏷️ Creating and pushing tag: ${newVersion}`);
   
   // Delete existing tag if it exists (locally and remote)
@@ -30224,7 +30310,13 @@ async function createAndPushTag(newVersion) {
   
   // Create new tag
   execSync(`git tag -a "${newVersion}" -m "Release ${newVersion}"`);
-  execSync(`git push origin HEAD`);
+
+  if (pushBranch) {
+    execSync('git push origin HEAD');
+  } else {
+    core.info('Skipping branch push; only pushing the release tag');
+  }
+
   execSync(`git push origin "${newVersion}"`);
 }
 
@@ -30496,8 +30588,11 @@ function detectTriggerMode(inputMode, context) {
 
   const eventName = context.eventName;
   
-  if (eventName === 'pull_request' && context.payload.pull_request?.merged) {
-    return 'pr-merge';
+  if (eventName === 'pull_request') {
+    if (context.payload.pull_request?.merged) {
+      return 'pr-merge';
+    }
+    return 'pr-open';
   } else if (eventName === 'workflow_dispatch') {
     return 'manual';
   } else if (eventName === 'workflow_call') {
@@ -30509,11 +30604,23 @@ function detectTriggerMode(inputMode, context) {
   return 'unknown';
 }
 
+function detectExecutionMode(inputMode, triggerMode) {
+  if (inputMode !== 'auto-detect') {
+    return inputMode;
+  }
+
+  if (triggerMode === 'pr-open') {
+    return 'validate';
+  }
+
+  return 'release';
+}
+
 function parseLabels(context, inputs, triggerMode) {
   let releaseType = 'none';
   let isPrerelease = false;
   
-  if (triggerMode === 'pr-merge') {
+  if (triggerMode === 'pr-open' || triggerMode === 'pr-merge') {
     // Parse PR labels
     const labels = context.payload.pull_request?.labels?.map(label => label.name) || [];
     core.info(`PR labels: ${labels.join(', ')}`);
@@ -30589,6 +30696,14 @@ function validateInputs(inputs) {
   if (!['npm', 'yarn', 'pnpm'].includes(inputs.packageManager)) {
     errors.push('package-manager must be one of: npm, yarn, pnpm');
   }
+
+  if (!['auto-detect', 'validate', 'release'].includes(inputs.executionMode)) {
+    errors.push('execution-mode must be one of: auto-detect, validate, release');
+  }
+
+  if (inputs.packageJsonMode && !['update', 'verify', 'ignore'].includes(inputs.packageJsonMode)) {
+    errors.push('package-json-mode must be one of: update, verify, ignore');
+  }
   
   if (errors.length > 0) {
     throw new Error(`Invalid inputs: ${errors.join(', ')}`);
@@ -30601,6 +30716,7 @@ function sleep(ms) {
 
 module.exports = {
   detectTriggerMode,
+  detectExecutionMode,
   parseLabels,
   parseVersion,
   formatVersion,
@@ -30652,7 +30768,7 @@ function calculateVersion(latestVersion, releaseType, isPrerelease, inputs) {
 function updatePackageJson(packageJsonPath, newVersion) {
   if (!fs.existsSync(packageJsonPath)) {
     core.warning(`Package.json not found at ${packageJsonPath}, skipping version update`);
-    return;
+    return false;
   }
   
   try {
@@ -30664,8 +30780,39 @@ function updatePackageJson(packageJsonPath, newVersion) {
     
     fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
     core.info(`✅ Updated ${packageJsonPath} version to ${versionWithoutV}`);
+    return true;
   } catch (error) {
     core.warning(`Failed to update package.json: ${error.message}`);
+    return false;
+  }
+}
+
+function normalizePackageJsonVersion(version) {
+  return version.startsWith('v') ? version.slice(1) : version;
+}
+
+function verifyPackageJsonVersion(packageJsonPath, expectedVersion) {
+  if (!fs.existsSync(packageJsonPath)) {
+    core.warning(`Package.json not found at ${packageJsonPath}, skipping version verification`);
+    return false;
+  }
+
+  try {
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    const actualVersion = normalizePackageJsonVersion(packageJson.version || '');
+    const expectedVersionWithoutV = normalizePackageJsonVersion(expectedVersion);
+
+    if (actualVersion !== expectedVersionWithoutV) {
+      throw new Error(
+        `Expected ${packageJsonPath} version to be ${expectedVersionWithoutV}, but found ${actualVersion || '(empty)'}`
+      );
+    }
+
+    core.info(`✅ Verified ${packageJsonPath} version matches ${expectedVersionWithoutV}`);
+    return true;
+  } catch (error) {
+    core.error(`Package.json version verification failed: ${error.message}`);
+    throw error;
   }
 }
 
@@ -30739,6 +30886,7 @@ function compareVersions(version1, version2) {
 module.exports = {
   calculateVersion,
   updatePackageJson,
+  verifyPackageJsonVersion,
   parseExistingPrerelease,
   incrementPrerelease,
   validateVersion,

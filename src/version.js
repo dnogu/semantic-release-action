@@ -36,7 +36,7 @@ function calculateVersion(latestVersion, releaseType, isPrerelease, inputs) {
 function updatePackageJson(packageJsonPath, newVersion) {
   if (!fs.existsSync(packageJsonPath)) {
     core.warning(`Package.json not found at ${packageJsonPath}, skipping version update`);
-    return;
+    return false;
   }
   
   try {
@@ -48,8 +48,39 @@ function updatePackageJson(packageJsonPath, newVersion) {
     
     fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
     core.info(`✅ Updated ${packageJsonPath} version to ${versionWithoutV}`);
+    return true;
   } catch (error) {
     core.warning(`Failed to update package.json: ${error.message}`);
+    return false;
+  }
+}
+
+function normalizePackageJsonVersion(version) {
+  return version.startsWith('v') ? version.slice(1) : version;
+}
+
+function verifyPackageJsonVersion(packageJsonPath, expectedVersion) {
+  if (!fs.existsSync(packageJsonPath)) {
+    core.warning(`Package.json not found at ${packageJsonPath}, skipping version verification`);
+    return false;
+  }
+
+  try {
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    const actualVersion = normalizePackageJsonVersion(packageJson.version || '');
+    const expectedVersionWithoutV = normalizePackageJsonVersion(expectedVersion);
+
+    if (actualVersion !== expectedVersionWithoutV) {
+      throw new Error(
+        `Expected ${packageJsonPath} version to be ${expectedVersionWithoutV}, but found ${actualVersion || '(empty)'}`
+      );
+    }
+
+    core.info(`✅ Verified ${packageJsonPath} version matches ${expectedVersionWithoutV}`);
+    return true;
+  } catch (error) {
+    core.error(`Package.json version verification failed: ${error.message}`);
+    throw error;
   }
 }
 
@@ -123,6 +154,7 @@ function compareVersions(version1, version2) {
 module.exports = {
   calculateVersion,
   updatePackageJson,
+  verifyPackageJsonVersion,
   parseExistingPrerelease,
   incrementPrerelease,
   validateVersion,

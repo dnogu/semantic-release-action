@@ -1,0 +1,24 @@
+name: Release
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dnogu/semantic-release-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          execution-mode: release
+          package-json-mode: verify
+          commit-changes: false
+          base_release: true
