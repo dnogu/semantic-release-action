@@ -29977,7 +29977,7 @@ async function run() {
     const triggerMode = detectTriggerMode(inputs.triggerMode, context);
     core.info(`🔍 Detected trigger mode: ${triggerMode}`);
 
-    const executionMode = detectExecutionMode(inputs.executionMode, triggerMode);
+    const executionMode = detectExecutionMode(inputs.executionMode, triggerMode, context);
     core.info(`🧭 Execution mode: ${executionMode}`);
 
     const { releaseType, isPrerelease } = parseLabels(context, inputs, triggerMode);
@@ -30608,13 +30608,22 @@ function detectTriggerMode(inputMode, context) {
   return 'unknown';
 }
 
-function detectExecutionMode(inputMode, triggerMode) {
+function detectExecutionMode(inputMode, triggerMode, context = github.context) {
   if (inputMode !== 'auto-detect') {
     return inputMode;
   }
 
   if (triggerMode === 'pr-open') {
-    return 'validate';
+    const headRepo = context.payload?.pull_request?.head?.repo?.full_name;
+    const baseRepo = context.repo?.owner && context.repo?.repo
+      ? `${context.repo.owner}/${context.repo.repo}`
+      : null;
+
+    if (headRepo && baseRepo && headRepo !== baseRepo) {
+      return 'validate';
+    }
+
+    return 'prepare';
   }
 
   return 'release';
