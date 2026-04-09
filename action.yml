@@ -43,7 +43,7 @@ inputs:
   node-version:
     description: 'Node.js version to use for building'
     required: false
-    default: '20'
+    default: '24'
   package-manager:
     description: 'Package manager to use (npm, yarn, pnpm)'
     required: false
@@ -134,5 +134,5 @@ outputs:
     description: 'Git tag name that was created'
 
 runs:
-  using: 'node20'
+  using: 'node24'
   main: 'dist/index.js'

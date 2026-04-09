@@ -105,7 +105,7 @@ When you merge a PR with labels, the action automatically:
     prerelease-number: '1'
     
     # Build configuration
-    node-version: '20'
+    node-version: '24'
     package-manager: 'npm'  # npm, yarn, pnpm
     working-directory: '.'
     
