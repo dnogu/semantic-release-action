@@ -371,8 +371,27 @@ async function pushBranchChanges(context) {
     throw new Error('Cannot push preparation changes to a pull request from a fork');
   }
 
-  core.info(`⬆️ Pushing preparation changes back to PR branch: ${headRef}`);
-  execSync(`git push origin HEAD:${headRef}`);
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      core.info(`🔄 Syncing preparation commit with latest PR branch state: ${headRef}`);
+      execSync(`git fetch origin "${headRef}"`);
+      execSync(`git rebase "origin/${headRef}"`);
+
+      core.info(`⬆️ Pushing preparation changes back to PR branch: ${headRef}`);
+      execSync(`git push origin HEAD:${headRef}`);
+      return;
+    } catch (error) {
+      const message = error.message || '';
+      const shouldRetry = /behind its remote counterpart|non-fast-forward|fetch first|failed to push/i.test(message);
+
+      if (attempt < 2 && shouldRetry) {
+        core.warning(`Remote PR branch moved while prepare mode was running. Retrying push for ${headRef}.`);
+        continue;
+      }
+
+      throw error;
+    }
+  }
 }
 
 async function createAndPushTag(newVersion, options = {}) {

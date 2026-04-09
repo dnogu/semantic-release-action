@@ -159,7 +159,7 @@ With this setup, the merged `package.json` version must already match the tag th
 
 ### PR Preparation Workflow
 
-For same-repository pull requests, `execution-mode: auto-detect` now defaults to `prepare`. This mode updates files, runs install/test/build, commits the results, and pushes them back to the PR branch without creating a tag or release. Fork PRs automatically fall back to `validate` because the action cannot push back to fork branches.
+For same-repository pull requests, `execution-mode: auto-detect` now defaults to `prepare`. This mode updates files, runs install/test/build, commits the results, and pushes them back to the PR branch without creating a tag or release. Before pushing, the action fetches and rebases onto the latest PR branch tip so it is less likely to fail when another update lands mid-run. Fork PRs automatically fall back to `validate` because the action cannot push back to fork branches.
 
 ```yaml
 name: Prepare Release PR
